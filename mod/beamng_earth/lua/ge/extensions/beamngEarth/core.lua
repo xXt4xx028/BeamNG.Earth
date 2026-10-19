@@ -33,6 +33,8 @@ M.dependencies = { 'ui_imgui' }
 -- Helper modules live next to this file. 'lua/ge/extensions/?.lua' is on package.path
 -- (main.lua:58 extensions.addModulePath), so they resolve as 'beamngEarth/<name>'.
 local geodesy = require('beamngEarth/geodesy')
+local multiplayer = require('beamngEarth/multiplayer')
+local mpProfile = nil -- local generator fingerprint from earthd; survives level reloads
 local net = require('beamngEarth/net')
 local terrain = require('beamngEarth/terrain')
 local farfield = require('beamngEarth/farfield')
@@ -345,6 +347,7 @@ end
 
 local function commitTeleport(msg)
   local tr, err = anchorTerrain(msg)
+  multiplayer.beginFrameChange()
   gov:heavyNow() -- the user asked for a jump: no waiting for a calm frame
   local sw = stopwatch.new()
   local ok
@@ -451,6 +454,7 @@ local function commitRebase(msg, purpose)
     st.retryAt = st.clock + rebase.RETRY_S
     return false
   end
+  multiplayer.beginFrameChange()
   local sw = stopwatch.new()
   local newAnchor = geodesy.newAnchor(msg.lat, msg.lon)
   local xf = st.anchor:transformTo(newAnchor)
@@ -569,6 +573,7 @@ local function onMessage(msg)
     trees.clear()
     setStatus('Disconnected from companion server: ' .. tostring(msg.error))
   elseif t == 'hello' then
+    mpProfile = type(msg.earthMP) == 'table' and msg.earthMP or nil
     st.sessionId = msg.sessionId
     roads.setSession(msg.sessionId)   -- the road / building tiles' pooled shape files belong to this server
     lastHello = {}           -- the server's version and options, for the reports' hardware.json
@@ -1272,6 +1277,8 @@ local function onLevelStart()
   farfield.forget()
   terrain.onLevelChanged()
   st.inOurLevel = getCurrentLevelIdentifier() == LEVEL_ID
+  st.mpProfile, st.mpBlockSize = mpProfile, blockSize
+  multiplayer.update(st, 0)
   -- the window opens by itself only in our level; elsewhere use beamngEarth_core.toggleUI(). With
   -- the pause-menu settings page it is a compact HUD, hidden unless the settings show it.
   ui.visible = st.inOurLevel and not settings.hudHiddenAtStart()
@@ -1320,6 +1327,7 @@ local function onClientPreStartMission(levelPath)
 end
 
 local function onClientEndMission()
+  multiplayer.reset()
   postfx.restore()
   gps.reset()
   do local stg = rawget(_G, 'beamngEarth_settings') if stg and stg.redirectBigMap then stg.redirectBigMap(false) end end
@@ -1346,6 +1354,7 @@ local function onExtensionLoaded()
 end
 
 local function onExtensionUnloaded()
+  multiplayer.reset()
   net.close()
   farfield.clear()
   roads.clear()
@@ -1574,7 +1583,12 @@ function M.setRoadsEnabled(on)
 end
 
 M.onUpdate = onUpdate
-M.onPreRender = onPreRender
+M.onPreRender = function(dtReal, dtSim)
+  onPreRender(dtReal, dtSim)
+  st.mpProfile, st.mpBlockSize = mpProfile, blockSize
+  multiplayer.update(st, dtReal or dtSim or 0)
+end
+function M.multiplayerStatus() return multiplayer.status() end
 M.onUiChangedState = onUiChangedState
 M.onClientStartMission = onClientStartMission
 M.onClientPreStartMission = onClientPreStartMission

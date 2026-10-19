@@ -119,6 +119,7 @@ import updates as updatesmod  # noqa: E402
 import cpupin  # noqa: E402
 import netfetch  # noqa: E402
 import protocol  # noqa: E402
+import mpprofile  # noqa: E402
 import weather as weathermod  # noqa: E402
 
 PROTOCOL = 4
@@ -2258,6 +2259,7 @@ class Connection:
             m = {"type": "hello", "protocol": PROTOCOL, "format": lay.format, "serverVersion": SERVER_VERSION,
                  "sessionId": self.s.sid, "farFormat": self.s.far_format, "material": farfield.MATERIAL,
                  "nearVisual": self.s.near_visual, "attribution": self.s.attribution()}
+            m["earthMP"] = mpprofile.for_server(self.s, SERVER_VERSION)
             if self.s.imagery is not None:      # the world map credits the sources its view shows
                 m["imageryCredits"] = self.s.imagery.credits_by_area()
                 m["otherCredits"] = self.s.attribution_rest()

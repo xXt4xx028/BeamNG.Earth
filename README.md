@@ -1,5 +1,10 @@
 # BeamNG.Earth
 
+> **Experimental BeamMP fork:** see [setup, behavior and limitations](docs/BEAMMP.md).
+> This branch adds geographic packet conversion for independent exploration.
+> It has automated tests but has **not been validated in a live two-client session**.
+> Use the companion from this fork; upstream binaries do not contain the integration.
+
 A 1:1 scale, streamed Earth for [BeamNG.drive](https://www.beamng.com/): drive anywhere on the
 planet on real elevation data and satellite imagery, with distance-based level of detail and the
 real curvature of the Earth.

@@ -132,6 +132,7 @@ SERVER_TO_MOD = {
     "hello": {"protocol": F(int), "format": F(int), "serverVersion": F(str), "sessionId": F(str),
               "farFormat": F(str), "material": F(str),
               "nearVisual": F(str), "attribution": F(str),          # protocol 4
+              "earthMP": F(dict, OPT),        # fork: generator compatibility fingerprint
               "cells": F(int, OPT),             # v1.4 M1: cells per tile edge, FORMAT 4 only
               "blockSize": F(int, OPT),         # v1.4 M4: terrain block size, only when not 1024 (--block 512)
               "horizon": F(bool, OPT),          # v1.4 M1h: true with --horizon only
