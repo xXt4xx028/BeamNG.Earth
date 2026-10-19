@@ -15,6 +15,10 @@ server address alone does not make the separate Earth asset socket reachable.
 For Internet hosting, players need a compatible private network/VPN or a local
 tunnel endpoint. There is no bundled tunnel or sandbox bypass.
 
+An alternative relay through BeamMP events has been [reviewed in source](BEAMMP-TRANSPORT-REVIEW.md).
+It is not implemented in alpha.2; shared TCP traffic and synchronous sends need
+live throughput/latency tests before claiming it can stream terrain to eight players.
+
 The host runs two processes:
 
 1. **BeamMP-Server**, with the `EarthSync` Lua resource and the client ZIP.
