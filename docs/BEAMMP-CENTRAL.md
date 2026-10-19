@@ -52,10 +52,13 @@ on the host; the Lua resource announces the Earth endpoint to joining players.
   generation than eight players driving together. The earlier per-PC CPU
   estimate does not apply to this centralized design. Real eight-player CPU,
   RAM, upload bandwidth and FPS measurements are still required.
-- The host helper now selects a 12 km far scenery radius and 256/256/128/128
-  texture sizes, with a 240 Mbit/s aggregate and 40 Mbit/s per-player Earth
-  upload cap. This reserves nominal headroom on a 300 Mbit/s link; it is not
-  router QoS or a guarantee against congestion. Direct CLI limits are configurable.
+- Alpha.5 fixes the helper's effective scenery radius: previously the automatic
+  horizon overrode the advertised 12 km. The helper now chooses low (8 km) below
+  16 GiB RAM or balanced (12 km) otherwise, with fixed radius and bounded decoded
+  caches. You can choose scenic (40 km). See [profiles and client quality](BEAMMP-WORLD-PERFORMANCE.md).
+  Its 240 Mbit/s aggregate and 40 Mbit/s per-player Earth upload caps reserve
+  nominal headroom on a 300 Mbit/s link; this is not router QoS or a congestion
+  guarantee. Direct CLI limits are configurable.
 - A shared 128 MiB in-memory asset cache avoids repeated disk reads and SHA256
   computation for unchanged files used by multiple players. It checks file
   identity/size/timestamps to detect pooled filenames being reused. It does not
@@ -158,8 +161,13 @@ Alpha.3 adds tests for real TLS through the bridge into the headless generator,
 binary transfer, rejecting an untrusted certificate, shared eight-sender file
 reuse, upload pacing, regional raster reprojection and local DEM fallback.
 
-Code is in branch `beammp/earth-sync`; use alpha.4 packages for these additions,
+Code is in branch `beammp/earth-sync`; use alpha.5 packages for these additions,
 binary chunks, cursor-based framing and a soft 3 ms
 receive budget. The alpha.3 client bridge executable remains compatible because
 it forwards the stream without parsing it.
 The older [distributed setup](BEAMMP.md) remains available for comparison.
+
+Alpha.5 also adds host/client LOD profiles, fixes governor starvation with high
+normal engine ticking, schedules vegetation in the shared budget and collision
+rebuilds in heavy slots, and divides decoded DEM cache capacity among processes.
+See [validation, measured selection reductions and limits](BEAMMP-WORLD-PERFORMANCE.md).

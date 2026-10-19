@@ -190,4 +190,30 @@ trees.update(7, { x = 50, y = 50 })
 for _, o in pairs(S.objects) do if o.class == 'Forest' and o.pos and o.pos.y == 0 and o.rot then reused = true end end
 T.check(reused, 'a pooled Forest is reset to no transform when reused')
 trees.clear()
+-- Shared streaming budget: even a large vegetation batch yields, resumes and
+-- keeps collision/quiet frames free of Forest changes.
+trees.onTile({ anchorId = 10, key = '0_0', path = '/t/v.json', n = 100 }, 10)
+local p = { x = 50, y = 50 }
+local g = { blocked = true, units = 0, limit = 5, heavy = false }
+function g:isHeavyFrame() return self.heavy end
+function g:try(kind) return kind == 'forestItem' and self.units < self.limit end
+function g:charge(kind, ms) self.units = self.units + 1; T.check(ms >= 0, 'measured item wall time') end
+T.check(trees.hasWork(10, p), 'new trees request streaming budget')
+trees.update(10, p, g)
+T.check(count() == 0, 'quiet frame makes no Forest changes')
+g.blocked, g.heavy = false, true
+trees.update(10, p, g)
+T.check(count() == 0, 'heavy terrain frame makes no Forest changes')
+g.heavy = false
+trees.update(10, p, g)
+T.check(count() == 5 and trees.status().pending == 1, 'large batch yields when shared budget is exhausted')
+g.units, g.limit = 0, 1000
+trees.update(10, p, g)
+T.check(count() == 100 and not trees.hasWork(10, p), 'next budget resumes all nearby trees without losing collision detail')
+T.check(trees.hasWork(10, { x = 3000, y = 3000 }), 'movement across rings requests new budget')
+trees.onDrop({ anchorId = 10, key = '0_0' })
+g.units, g.limit = 0, 5
+trees.update(10, p, g)
+T.check(count() == 95 and trees.hasWork(10, p), 'deletion also yields to the shared budget')
+trees.clear()
 T.done('test_trees')

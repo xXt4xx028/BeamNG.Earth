@@ -261,7 +261,9 @@ class MapData:
         """A layer file's arrays, or None when it is missing or unreadable (truncated, a damaged
         deflate stream, another layout): a miss, rebuilt and written again."""
         try:
-            with np.load(path, allow_pickle=False) as z:
+            # Own the handle even if np.load raises while opening a corrupt ZIP.
+            # In particular, Windows must be able to replace that damaged cache.
+            with open(path, 'rb') as source, np.load(source, allow_pickle=False) as z:
                 arrays = {k: z[k] for k in z.files}
         except FileNotFoundError:
             return None

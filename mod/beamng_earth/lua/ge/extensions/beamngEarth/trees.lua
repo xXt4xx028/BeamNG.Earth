@@ -162,6 +162,7 @@ local MATERIALS = {
 }
 
 local stopwatch = require('beamngEarth/stopwatch')
+local now = stopwatch.clock()
 local tiles = {}        -- key "a:tx_ty" -> { anchor, cx, cy, rows, made = { i -> item }, shown = rank }
 local ghostSince = nil               -- since the last rebase that left ghost tiles (M.transform)
 local types = {}        -- "shape" / "shape#n" (not solid) -> TSForestItemData
@@ -452,8 +453,24 @@ end
 -- ms whatever the count (2026-10-15, 100 mph forest drive: tick 3.5 -> 1.65 ms a frame on average, 50 -> 54 fps)
 M.EVERY_N = 3
 local frameN = 0
-function M.update(anchorId, player)
+function M.hasWork(anchorId, player)
+  if ghostSince then return true end
+  for _, t in pairs(tiles) do
+    if t.drop or (t.anchor ~= anchorId and not t.ghost) or t.pending or t.shown == 0 then return true end
+    if player and t.anchor == anchorId and not t.ghost then
+      local dx = math.max(math.abs(player.x - t.cx) - 128, 0)
+      local dy = math.max(math.abs(player.y - t.cy) - 128, 0)
+      local d = math.sqrt(dx * dx + dy * dy)
+      local near = d <= M.SOLID_M or (t.near and d <= M.SOLID_M + M.SOLID_HYST_M) or false
+      if threshold(d) ~= t.shown or groupBand(t, d) ~= t.band or near ~= t.near then return true end
+    end
+  end
+  return false
+end
+
+function M.update(anchorId, player, gov)
   if not next(tiles) then return end
+  if gov and (gov.blocked or gov:isHeavyFrame()) then return end
   if not setup() then return end
   frameN = frameN + 1
   if frameN % M.EVERY_N ~= 0 then return end
@@ -467,10 +484,12 @@ function M.update(anchorId, player)
       local fd = f and f:getData()
       local left = false
       for i, it in pairs(t.made) do
-        if budget <= 0 then return end
+        if budget <= 0 or (gov and not gov:try('forestItem')) then return end
         local sh = t.madeShape[i]
         if not sh or allow(sh) then
+          local t0 = now()
           if fd then removeItem(fd, it, sh) end
+          if gov then gov:charge('forestItem', now() - t0) end
           t.made[i], t.solid[i], t.madeShape[i] = nil, nil, nil
           budget = budget - 1
         else left = true end
@@ -521,19 +540,23 @@ function M.update(anchorId, player)
         local solid = near and not M.NO_COLLIDE[g or '']
         if r < want and (not t.made[i] or (t.solid[i] == true) ~= solid) then
           local sh, sc = shapeOf(t, i, row)
-          if budget <= 0 then t.pending = true; finish(); return end
+          if budget <= 0 or (gov and not gov:try('forestItem')) then t.pending = true; finish(); return end
           if allow(sh) then
+            local t0 = now()
             if t.made[i] then removeItem(data(), t.made[i], t.madeShape[i]); budget = budget - 1 end  -- solid <-> not
             t.made[i] = makeItem(data(), row, sh, sc, solid)
+            if gov then gov:charge('forestItem', now() - t0) end
             t.solid[i] = (t.made[i] and solid) or nil      -- true or nil
             t.madeShape[i] = t.made[i] and sh or nil
             if solid then nearMade = true end
             budget = budget - 1
           else t.pending = true end                -- another frame (this one's shapes are full)
         elseif r >= want and t.made[i] then
-          if budget <= 0 then t.pending = true; finish(); return end
+          if budget <= 0 or (gov and not gov:try('forestItem')) then t.pending = true; finish(); return end
           if allow(t.madeShape[i] or '') then
+            local t0 = now()
             removeItem(data(), t.made[i], t.madeShape[i])
+            if gov then gov:charge('forestItem', now() - t0) end
             t.made[i], t.solid[i], t.madeShape[i] = nil, nil, nil
             budget = budget - 1
           else t.pending = true end

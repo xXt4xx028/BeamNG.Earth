@@ -29,7 +29,7 @@ Se pueden repetir con `python tools/check_regional_data.py --out resultado.json`
 
 | Región | Datos candidatos | Uso y límites |
 |---|---|---|
-| México | [INEGI CEM 3.0 y MDE/MDT](https://www.inegi.org.mx/app/geo2/elevacionesmex/) | CEM a 15 m como candidato regional; MDT de 5 m/1.5 m donde exista cobertura. Preferir **Terreno**, no Superficie, para física. No prometer 1.5 m en todas las sierras. |
+| México | [INEGI CEM 4.0](https://www.inegi.org.mx/app/biblioteca/ficha.html?upc=794551151600) y [MDE/MDT](https://www.inegi.org.mx/app/geo2/elevacionesmex/) | CEM nacional de 15 m, edición 2025 y cobertura temporal 2024; MDT de 5 m/1.5 m donde exista cobertura. Preferir **Terreno**, no Superficie, para física. No prometer 1.5 m en todas las sierras. |
 | Patagonia argentina | [IGN MDE-Ar v2.1](https://www.ign.gob.ar/content/nuevo-modelo-digital-de-elevaciones-de-la-rep%C3%BAblica-argentina) y [catálogo MDE/MDT](https://www.ign.gob.ar/NuestrasActividades/Geodesia/ModeloDigitalElevaciones/faq) | El modelo nacional es de 30 m. El catálogo tiene modelos más finos con cobertura específica; algunos necesitan solicitud. El tamaño de celda por sí solo no demuestra mejora frente a la base actual. |
 | Patagonia chilena | [IDE Chile](https://www.ide.cl/), [IDE Magallanes](https://idemagallanes.cl/magallanes) | Buscar productos con cobertura y metadatos del área elegida. No se verificó un MDT fino uniforme ni un endpoint de descarga automática para toda Patagonia chilena. |
 | Base global | [Copernicus GLO-30](https://dataspace.copernicus.eu/explore-data/data-collections/copernicus-contributing-missions/collections-description/COP-DEM) | DSM de 30 m: incluye vegetación y construcciones. El filtro del mod ayuda, pero no equivale a un MDT LiDAR. |

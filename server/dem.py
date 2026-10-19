@@ -94,7 +94,11 @@ class Dem:
 
     # mem_tiles: decoded float32 512² tiles kept in memory (1 MB each; 512 per docs/V1_2_DESIGN.md §4.3).
     # fetcher: the server's netfetch.Fetcher (shared rate limits); None = a Fetcher of its own.
-    def __init__(self, cache_dir, fetch_workers=16, mem_tiles=512, fetcher=None, local_dir=None):
+    def __init__(self, cache_dir, fetch_workers=None, mem_tiles=None, fetcher=None, local_dir=None):
+        fetch_workers = int(os.environ.get('BEAMNG_EARTH_DEM_FETCH_THREADS','16')) if fetch_workers is None else fetch_workers
+        mem_tiles = int(os.environ.get('BEAMNG_EARTH_DEM_MEM_TILES','512')) if mem_tiles is None else mem_tiles
+        if fetch_workers<1 or mem_tiles<1:
+            raise ValueError('DEM worker/cache limits must be positive')
         self.cache_dir = cache_dir
         self.local_dem = localdem.Store(local_dir or os.environ.get('BEAMNG_EARTH_LOCAL_DEM'))
         self.fetcher = fetcher if fetcher is not None else netfetch.Fetcher()
@@ -102,7 +106,7 @@ class Dem:
         self.pool = ThreadPoolExecutor(fetch_workers, thread_name_prefix="dem-fetch")
         # The urgent lane (urgent()): the anchor's first block after a teleport needs ~10 tiles and waited ~33 s
         # behind hundreds queued by the far field, the road plans and the ground ahead (2026-10-16; alone 0.9 s).
-        self.urgent_pool = ThreadPoolExecutor(URGENT_WORKERS, thread_name_prefix="dem-urgent")
+        self.urgent_pool = ThreadPoolExecutor(int(os.environ.get('BEAMNG_EARTH_DEM_URGENT_THREADS',str(URGENT_WORKERS))), thread_name_prefix="dem-urgent")
         self._local = threading.local()
         self.mem_tiles = mem_tiles
         self._lru = OrderedDict()       # (z, x, y) -> float32 [TILE, TILE]

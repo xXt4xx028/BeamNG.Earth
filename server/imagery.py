@@ -311,7 +311,7 @@ DS_PENDING = "ds"
 class Imagery:
     disk = cachemod.NONE    # the server's cache.Cache (last use per file, the size cap); set by earthd
 
-    def __init__(self, cache_dir, chain=DEFAULT_CHAIN, fetch_workers=FETCH_WORKERS, mem_tiles=MEM_TILES,
+    def __init__(self, cache_dir, chain=DEFAULT_CHAIN, fetch_workers=None, mem_tiles=None,
                  tone=1.0, deshadow=None, colormatch=None, fetcher=None, leaf_on=True, season_mode="off"):
         """deshadow: an optional deshadow.Deshadow (--deshadow lambert|full): _mosaic relights its
         source's tiles; None = the imagery as served (byte-identical textures).
@@ -321,6 +321,10 @@ class Imagery:
         leaf_on: leaf-off sources' vegetation takes the summer reference's colour (season.leaf_on).
         season_mode: the season grade of every texture (season.amounts_for: "auto" = today's, "fall", "off")."""
         self.cache_dir = cache_dir
+        fetch_workers = int(os.environ.get('BEAMNG_EARTH_IMAGE_FETCH_THREADS',str(FETCH_WORKERS))) if fetch_workers is None else fetch_workers
+        mem_tiles = int(os.environ.get('BEAMNG_EARTH_IMAGE_MEM_TILES',str(MEM_TILES))) if mem_tiles is None else mem_tiles
+        if fetch_workers<1 or mem_tiles<1:
+            raise ValueError('imagery worker/cache limits must be positive')
         self.chain = tuple(SOURCES[s] if isinstance(s, str) else s for s in chain)
         self.fetcher = fetcher if fetcher is not None else netfetch.Fetcher()
         self.fetcher.register_chain("imagery", [s.url for s in self.chain])

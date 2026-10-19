@@ -49,6 +49,7 @@ M.EST_ALPHA = 0.2          -- cost EMA gain
 -- the bucket (chargeEngine), at most ENGINE_MAX_DEBT_MS, so imports wait until the budget has paid for it.
 M.ENGINE_FREE_MS = 2.0
 M.ENGINE_MAX_DEBT_MS = 50.0
+M.ENGINE_CAUSAL_FRAMES = 3 -- deferred engine work following an import/heavy operation
 -- Prior cost estimates (ms) per unit kind: in-game P5/P6 (2026-10-10): a 2k-tri .cdae first load
 -- 3.4 ms (8k-tri 1.5 ms; v1.2 drive EMA 1.93), a 2k-tri .dae 7.5-25 ms; unhide is free; setPosition
 -- ~0.006 ms (p6). v1.3 satellite imagery (lead probe p_sat.lua): a Lua-created per-tile Material
@@ -94,7 +95,8 @@ function M.new(opts)
     tokens = 0,         -- token bucket, ms
     est = est,          -- per kind cost estimate, ms
     used = {},          -- kinds asked for at least once (they define maxUnit)
-    hist = {}, histN = 0, -- ring of recent non-heavy frame times
+    hist = {}, histN = 0, scratch = {}, -- reusable median scratch (no table allocation per frame)
+    engineBase = nil,
     base = nil,
     frame = 0,
     lastStart = nil,
@@ -130,8 +132,7 @@ function Gov:maxUnit()
   return m
 end
 
-local function median(t, n)
-  local s = {}
+local function median(t, n, s)
   for i = 1, n do s[i] = t[i] end
   table.sort(s)
   if n % 2 == 1 then return s[(n + 1) / 2] end
@@ -149,7 +150,7 @@ function Gov:beginFrame(hasWork, wallMs)
     if not self.prevHeavy then
       self.histN = self.histN + 1
       self.hist[(self.histN - 1) % M.BASE_FRAMES + 1] = wallMs
-      self.base = median(self.hist, min(self.histN, M.BASE_FRAMES))
+      self.base = median(self.hist, min(self.histN, M.BASE_FRAMES), self.scratch)
     end
     self.w1, self.w2 = wallMs, self.w1
   end
@@ -207,7 +208,16 @@ end
 
 -- The previous frame's engine tick (ms, Engine.Debug metrics "Ticking"): its excess is a debt on the bucket.
 function Gov:chargeEngine(tickMs)
-  local debt = max(0, (tickMs or 0) - M.ENGINE_FREE_MS)
+  tickMs = max(0,tonumber(tickMs) or 0)
+  local recent = self.frame-self.lastStreamFrame <= M.ENGINE_CAUSAL_FRAMES
+    or self.frame-self.heavyFrame <= M.ENGINE_CAUSAL_FRAMES
+  if not recent then
+    -- Normal engine ticking belongs to the game, not to the streaming bucket.
+    -- Learn idle cost; follow decreases immediately, increases slowly after a burst.
+    self.engineBase = self.engineBase and min(tickMs,self.engineBase+.02*(tickMs-self.engineBase)) or tickMs
+    return 0
+  end
+  local debt = max(0, tickMs - max(M.ENGINE_FREE_MS,self.engineBase or M.ENGINE_FREE_MS))
   if debt <= 0 then return 0 end
   self.tokens = max(-M.ENGINE_MAX_DEBT_MS, self.tokens - debt)
   self.stats.engineDebt = (self.stats.engineDebt or 0) + debt
@@ -262,7 +272,8 @@ function Gov:snapshot()
     heavyPending = self.heavyPending, estCdae = self.est.cdae, estDae = self.est.dae, estCdaeTex = self.est.cdaeTex,
     estCdaeTex128 = self.est.cdaeTex128, estCdaeTex256 = self.est.cdaeTex256, estCdaeTex512 = self.est.cdaeTex512,
     estMaterial = self.est.material, estMatDelete = self.est.matDelete, heavy = self.stats.heavy,
-    units = self.stats.units, maxFrameSpent = self.stats.maxFrameSpent, engineDebt = self.stats.engineDebt }
+    units = self.stats.units, maxFrameSpent = self.stats.maxFrameSpent, engineDebt = self.stats.engineDebt,
+    engineBase = self.engineBase }
 end
 
 M.Gov = Gov

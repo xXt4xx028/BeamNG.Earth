@@ -207,13 +207,38 @@ do
   g:try('cdae')                          -- the kind in use (it sets the bucket's size)
   for i = 1, 200 do t = t + 16; g:beginFrame(true) end
   T.check(g:try('cdae'), 'a calm stream: an import may run')
+  g:charge('cdae',3)
+  t=t+16; g:beginFrame(true)
   T.check(math.abs(g:chargeEngine(102) - 100) < 1e-9 and g.tokens < 0, 'a 102 ms engine tick: 100 ms of debt')
   T.check(not g:try('cdae'), 'in debt: no import')
   local frames = 0
   repeat t = t + 16; g:beginFrame(true); frames = frames + 1 until g:try('cdae') or frames > 500
   T.check(frames > 10 and frames < 500, 'imports again once the budget paid it (' .. frames .. ' frames)')
+  g:charge('cdae',3)
   g:chargeEngine(1e6)
   T.check(g.tokens >= -governor.ENGINE_MAX_DEBT_MS, "the debt is capped")
   T.check(g:chargeEngine(1.5) == 0, 'a normal tick is free')
+end
+do
+  local counts={}
+  for _,tick in ipairs({2,4,8,20}) do
+    local t=0
+    local g=governor.new({clock=function() return t end})
+    local imports=0
+    for i=1,600 do
+      t=t+16; g:beginFrame(true,16); g:chargeEngine(tick)
+      if g:try('cdae') then g:charge('cdae',4); imports=imports+1 end
+    end
+    counts[#counts+1]=imports
+    T.check(imports>200,'normal engine tick '..tick..' ms does not starve streaming')
+  end
+  T.check(counts[1]==counts[4],'normal base load is not charged as streaming debt')
+  local t=0
+  local g=governor.new({clock=function() return t end})
+  for i=1,64 do t=t+16; g:beginFrame(false,16); g:chargeEngine(8) end
+  g:charge('cdae',4)
+  t=t+16; g:beginFrame(true,16)
+  T.near(g:chargeEngine(108),100,1e-9,'deferred burst charges only cost above learned idle tick')
+  T.check(not g:try('cdae'),'actual deferred burst still pauses imports')
 end
 T.done('test_governor')

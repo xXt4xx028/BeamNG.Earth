@@ -121,6 +121,7 @@ import netfetch  # noqa: E402
 import protocol  # noqa: E402
 import mpprofile  # noqa: E402
 import remoteassets  # noqa: E402
+import performance  # noqa: E402
 import weather as weathermod  # noqa: E402
 
 PROTOCOL = 4
@@ -2049,6 +2050,8 @@ class Connection:
         self.focus = (0.0, 0.0)         # player x, y in the active frame
         self.vel = (0.0, 0.0)
         self.cam = None                 # pose.cam (protocol 3), kept for diagnostics
+        self.visual_scale = 1.0         # client outer LOD, never near radii or collision sampling
+        self.last_quality_at = -math.inf
         self.desired = {}               # key -> Tile (active anchor)
         self.refined = set()            # nodes refined by the last selection (hysteresis)
         self.node_changed = {}          # node -> monotonic time of its last state change
@@ -2343,6 +2346,9 @@ class Connection:
                  "sessionId": self.s.sid, "farFormat": self.s.far_format, "material": farfield.MATERIAL,
                  "nearVisual": self.s.near_visual, "attribution": self.s.attribution()}
             m["earthMP"] = mpprofile.for_server(self.s, SERVER_VERSION)
+            m["adaptiveLod"] = True
+            if not self.s.horizon:
+                m["renderRadius"] = self.s.radius
             if self.s.imagery is not None:      # the world map credits the sources its view shows
                 m["imageryCredits"] = self.s.imagery.credits_by_area()
                 m["otherCredits"] = self.s.attribution_rest()
@@ -2394,6 +2400,8 @@ class Connection:
             self.commit_terrain(msg)
         elif kind == "pose":
             self.on_pose(msg)
+        elif kind == "quality":
+            self.on_quality(msg)
         elif kind == "map_tiles":               # the in-game map's tiles, as files (the UI cannot fetch http)
             self.spawn(self.map_tiles(msg))
         elif kind == "geocode":                 # the map's search box: addresses and places (geocode.py)
@@ -2409,6 +2417,27 @@ class Connection:
             self.roads = roadsmod.Tracker()
         else:
             log.debug("ignoring message type %r", kind)
+
+    def on_quality(self, msg):
+        """Bounded per-client visual detail. Recompute at most once a second.
+
+        No client can increase the host's detail or alter the shared physics/near
+        geometry. The sender periodically retries so rapid menu edits converge.
+        """
+        scale = msg.get('lodScale')
+        if isinstance(scale, bool) or not isinstance(scale, (int, float)):
+            return
+        if not math.isfinite(scale) or not .55 <= scale <= 1:
+            return
+        now = time.monotonic()
+        if scale == self.visual_scale or now - self.last_quality_at < 1:
+            return
+        self.visual_scale, self.last_quality_at = float(scale), now
+        self.node_changed.clear()       # let this deliberate coarsening pass the old LOD hold
+        self.update_far()
+
+    def visual_k(self, level):
+        return self.s.kfun(level) * self.visual_scale
 
     def on_cache(self, msg):
         """The settings page: capGb sets the cap (0 = unlimited), clear: true empties the cache (but this
@@ -2938,7 +2967,7 @@ class Connection:
         self.retired = {ck: t for ck, t in self.retired.items() if now - t < self.s.retired_keep}
         self.node_changed = {n: t for n, t in self.node_changed.items() if now - t < farfield.HOLD_S}
         radius, extra = (self.horizon_select() if self.s.horizon else (self.s.radius, {}))
-        new, refined = farfield.select(*self.focus, self.forced(), self.refined, self.s.kfun,
+        new, refined = farfield.select(*self.focus, self.forced(), self.refined, self.visual_k,
                                        self.s.hysteresis, radius, hold=set(self.node_changed),
                                        min_level=self.s.min_level, radii=self.s.near_radii, layout=self.s.layout,
                                        forced_level=self.s.forced_level, view=self.view(), **extra)
@@ -2978,7 +3007,7 @@ class Connection:
         tune = os.environ.get("BNGE_LOD")      # experiments: "reach,cap"
         if tune:
             reach, cap = (float(v) for v in tune.split(","))
-        return farfield.View(cx, cy, cz - getattr(self, "pz", cz), ppr, err, tau=self.s.lod_px, reach=reach,
+        return farfield.View(cx, cy, cz - getattr(self, "pz", cz), ppr, err, tau=self.s.lod_px / self.visual_scale, reach=reach,
                              cells=self.s.layout.cells, cap=cap)
 
     def _regroup(self):
@@ -3209,6 +3238,8 @@ class Connection:
 
 
 async def main_async(args):
+    memory_budget = performance.cache_budget(args)
+    log.info('performance profile %s, cache budget %s',getattr(args,'performance',None) or 'legacy',memory_budget)
     # Spawned block/road workers inherit this immutable local elevation pack.
     if getattr(args,'local_dem_dir',None):
         os.environ['BEAMNG_EARTH_LOCAL_DEM'] = os.path.abspath(args.local_dem_dir)
@@ -3222,6 +3253,9 @@ async def main_async(args):
                         v, cdae.VERSION_WORD)
             fmt = "dae"
     kfun = None if args.lod_k is None else (lambda lvl: args.lod_k)
+    if getattr(args,'lod_scale',1) != 1:
+        base_k = kfun or farfield.Layout(args.cells,args.block,args.near_visual in MESH_LAYOUT).k
+        kfun = lambda lvl: base_k(lvl)*args.lod_scale
     radii = None
     if args.near_radii is not None:
         ml = farfield.MESH_MIN_LEVEL[args.cells]
@@ -3299,6 +3333,8 @@ async def main_async(args):
     server.update_check = args.update_check == "on"
     server.remote_assets = getattr(args, 'remote_assets', False)
     server.max_clients = getattr(args, 'max_clients', 8)
+    server.performance = getattr(args,'performance',None)
+    server.memory_budget = memory_budget
     if server.remote_assets:
         server.asset_store = remoteassets.SharedFiles()
         server.upload_pacer = remoteassets.Pacer(getattr(args,'upload_mbps',240)*1e6/8)
@@ -3460,6 +3496,11 @@ def parse_radii(text):
 def main():
     home = os.path.expanduser("~")
     ap = argparse.ArgumentParser(description="BeamNG.Earth companion server")
+    ap.add_argument('--performance',choices=('auto','low','balanced','scenic'),help='bounded visual/memory preset; explicit options override it')
+    ap.add_argument('--dem-cache-mib',type=int,help='total decoded DEM LRU budget across configured processes')
+    ap.add_argument('--image-cache-tiles',type=int,help='main imagery LRU entries per raw/corrected cache')
+    ap.add_argument('--query-memory-mib',type=int,help='DuckDB memory limit per query connection')
+    ap.add_argument('--lod-scale',type=float,default=1,help='outer distance-based LOD multiplier; exact near radii are preserved')
     ap.add_argument('--listen',default='127.0.0.1',help='listen address; external addresses require --remote-assets')
     ap.add_argument('--remote-assets',action='store_true',help='authenticated central generator; transfer files to game clients')
     ap.add_argument('--max-clients',type=int,choices=range(1,9),default=8,help='remote connection limit (1-8)')
@@ -3625,6 +3666,13 @@ def main():
                          "never what this session used within the hour, the gravity model or netstats/")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+    performance.apply_profile(args,sys.argv[1:])
+    if not math.isfinite(args.lod_scale) or not .25 <= args.lod_scale <= 1.5:
+        ap.error('--lod-scale must be finite and between 0.25 and 1.5')
+    for name in ('dem_cache_mib','image_cache_tiles','query_memory_mib'):
+        value=getattr(args,name)
+        if value is not None and not 1 <= value <= 16384:
+            ap.error(name+' must be between 1 and 16384')
     if not all(math.isfinite(v) and v >= 0 for v in (args.upload_mbps,args.player_upload_mbps)):
         ap.error('upload caps must be finite and nonnegative')
     if bool(args.tls_cert) != bool(args.tls_key):

@@ -270,8 +270,14 @@ class Reader:
             f._fetch_range = guarded
             return f
         fs._open = _open
-        con = duckdb.connect(config={"threads": self.threads, "autoinstall_known_extensions": False,
-                                     "autoload_known_extensions": False})
+        config={"threads": self.threads, "autoinstall_known_extensions": False,
+                "autoload_known_extensions": False}
+        limit=os.environ.get('BEAMNG_EARTH_QUERY_MIB')
+        if limit is not None:
+            amount=int(limit)
+            if not 1 <= amount <= 16384: raise ValueError('invalid query memory limit')
+            config['memory_limit']=f'{amount}MiB'
+        con = duckdb.connect(config=config)
         for k, v in PARQUET_CONFIG.items():
             con.execute(f"SET {k} = {str(v).lower()}")
         con.register_filesystem(fs)

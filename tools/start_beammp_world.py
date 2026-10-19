@@ -13,16 +13,15 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def command(beammp_dir, data_dir, public_host, listen='127.0.0.1', port=47613,
-            tls_cert=None,tls_key=None,local_dem=None):
+            tls_cert=None,tls_key=None,local_dem=None,profile='auto'):
     args = [sys.executable,str(ROOT/'server'/'earthd.py'),
             '--remote-assets','--listen',listen,'--port',str(port),'--max-clients','8',
             '--cache-cap','40','--cache-dir',str(data_dir/'downloads'),
             '--user-dir',str(data_dir/'runtime'),'--auth-token-file',str(data_dir/'.world-token'),
             '--publish-config',str(beammp_dir/'Resources'/'Server'/'EarthSync'/'EarthSync.runtime.json'),
-            '--public-host',public_host,'--workers','2','--road-processes','2','--pin','off',
+            '--public-host',public_host,'--performance',profile,'--pin','off',
             '--load-boost','off','--update-check','off',
-            '--upload-mbps','240','--player-upload-mbps','40',
-            '--far-radius','12000','--tex','256,256,128,128']
+            '--upload-mbps','240','--player-upload-mbps','40']
     if tls_cert:
         args += ['--tls-cert',str(tls_cert),'--tls-key',str(tls_key)]
     if local_dem:
@@ -40,6 +39,7 @@ if __name__ == '__main__':
     parser.add_argument('--tls-cert',type=Path,help='host certificate PEM; use with client bridge')
     parser.add_argument('--tls-key',type=Path,help='host private key PEM')
     parser.add_argument('--local-dem-dir',type=Path,help='prepared immutable regional elevation pack')
+    parser.add_argument('--performance',choices=('auto','low','balanced','scenic'),default='auto',help='auto: low below 16 GiB RAM, balanced otherwise')
     args=parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error('invalid port')
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     shutil.copy2(ROOT/'beammp'/'Resources'/'Server'/'EarthSync'/'main.lua',resource/'main.lua')
     print('Shared download cache: 40 GB target for all 8 clients; generated runtime files are additional.',flush=True)
     print('Keep BeamMP-Server running separately with MaxPlayers = 8 and the Earth client ZIP.',flush=True)
-    print('Earth upload cap: 240 Mbit/s shared, 40 Mbit/s per player; 12 km far scenery radius.',flush=True)
+    print(f'Earth upload cap: 240 Mbit/s shared, 40 Mbit/s per player; performance profile: {args.performance}.',flush=True)
     print('Use the separate client bridge for TLS/Internet, or LAN/VPN for direct game connections.',flush=True)
     raise SystemExit(subprocess.call(command(host,data,args.public_host,args.listen,args.port,
-                                             args.tls_cert,args.tls_key,args.local_dem_dir)))
+                                             args.tls_cert,args.tls_key,args.local_dem_dir,args.performance)))

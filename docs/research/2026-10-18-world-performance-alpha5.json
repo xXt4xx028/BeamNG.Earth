@@ -1,0 +1,115 @@
+{
+  "at": "2026-10-19T04:59:18.915553+00:00",
+  "version": "1.4.35-beammp-alpha.5",
+  "scope": "stateless real farfield.select; no DEM, generation, I/O, transitions, VFS, physics or render",
+  "cells": 64,
+  "block": 512,
+  "positions": [
+    [
+      0.0,
+      0.0
+    ],
+    [
+      123.25,
+      567.5
+    ],
+    [
+      -3200.0,
+      1900.0
+    ],
+    [
+      10000.0,
+      10000.0
+    ]
+  ],
+  "trisPerAsset": 8704,
+  "meanNearExactTiles": 19,
+  "profiles": {
+    "previous_horizon_minimum": {
+      "radiusM": 80000,
+      "outerKScale": 1.0,
+      "tilesPerPosition": [
+        296,
+        296,
+        290,
+        280
+      ],
+      "meanTiles": 290.5,
+      "meanAssetTriangles": 2528512.0,
+      "medianSelectorMs": 0.8541,
+      "exactNearKeysUnchanged": true,
+      "disc": true,
+      "tileReductionPercent": 0.0
+    },
+    "fixed_12km": {
+      "radiusM": 12000,
+      "outerKScale": 1.0,
+      "tilesPerPosition": [
+        192,
+        196,
+        197,
+        203
+      ],
+      "meanTiles": 197,
+      "meanAssetTriangles": 1714688,
+      "medianSelectorMs": 0.5699,
+      "exactNearKeysUnchanged": true,
+      "disc": false,
+      "tileReductionPercent": 32.19
+    },
+    "low": {
+      "radiusM": 8000.0,
+      "outerKScale": 0.7,
+      "tilesPerPosition": [
+        124,
+        123,
+        130,
+        139
+      ],
+      "meanTiles": 129,
+      "meanAssetTriangles": 1122816,
+      "medianSelectorMs": 0.3708,
+      "exactNearKeysUnchanged": true,
+      "disc": false,
+      "tileReductionPercent": 55.59
+    },
+    "balanced": {
+      "radiusM": 12000.0,
+      "outerKScale": 0.85,
+      "tilesPerPosition": [
+        168,
+        173,
+        181,
+        184
+      ],
+      "meanTiles": 176.5,
+      "meanAssetTriangles": 1536256.0,
+      "medianSelectorMs": 0.5133,
+      "exactNearKeysUnchanged": true,
+      "disc": false,
+      "tileReductionPercent": 39.24
+    },
+    "scenic": {
+      "radiusM": 40000.0,
+      "outerKScale": 1.0,
+      "tilesPerPosition": [
+        264,
+        264,
+        258,
+        258
+      ],
+      "meanTiles": 261,
+      "meanAssetTriangles": 2271744,
+      "medianSelectorMs": 0.7483,
+      "exactNearKeysUnchanged": true,
+      "disc": false,
+      "tileReductionPercent": 10.15
+    }
+  },
+  "demCacheCapacityMiB": {
+    "previous_7_processes": 3584,
+    "balanced_7_processes": 511
+  },
+  "memoryCaveat": "LRU data capacity only, not measured RAM/RSS; query/game/working arrays additional",
+  "fpsMeasured": false
+}

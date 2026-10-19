@@ -272,4 +272,25 @@ roads.onTile({ anchorId = 2, key = '0_0', path = '/t/a.json', n = 2 }, 2)
 roads.reset()
 T.check(roads.status().tiles == 0 and roads.status().queued == 0, 'level end: forgotten')
 
+-- Collision rebuilds obtain a heavy slot BEFORE the road import queues run.
+roads.RELOAD_EVERY_S = 0
+roads.requestCollision()
+S.calls.reloadCollision = 0
+roads.onTile({ anchorId = 2, key = '0_0', path = '/t/a.json', n = 2 }, 2)
+local gate = { granted = false, heavy = false, asks = 0, imports = 0 }
+function gate:isHeavyFrame() return self.heavy end
+function gate:requestHeavy() self.asks = self.asks + 1; return self.granted end
+function gate:try() self.imports = self.imports + 1; return true end
+function gate:charge() end
+roads.update(gate, 2)
+T.check(gate.asks == 1 and gate.imports == 0 and S.calls.reloadCollision == 0,
+  'pending collision slot stops imports from perpetually resetting the quiet gate')
+gate.granted = true
+roads.update(gate, 2)
+T.check(S.calls.reloadCollision == 1 and gate.imports == 0, 'granted heavy slot rebuilds collision without road imports')
+gate.heavy = true
+local asks = gate.asks
+roads.update(gate, 2)
+T.check(gate.asks == asks and gate.imports == 0, 'terrain/rebase heavy frame excludes road work')
+roads.reset()
 T.done('test_roads')

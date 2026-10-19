@@ -43,6 +43,7 @@ local rebase = require('beamngEarth/rebase')
 local follow = require('beamngEarth/follow')
 local lattice = require('beamngEarth/lattice')
 local governor = require('beamngEarth/governor')
+local quality = require('beamngEarth/quality').new()
 local camshift = require('beamngEarth/camshift')
 local stopwatch = require('beamngEarth/stopwatch')
 local horizon = require('beamngEarth/horizon')
@@ -106,6 +107,8 @@ local guardFailed = false     -- the edge guard threw once: off for the rest of 
 local bannerInfo = { port = net.PORT } -- banner.update's inputs, filled every frame (no allocation)
 local horizonOn = false       -- hello.horizon (M1h); outlives levels like the connection
 local farRadius = nil         -- status.radius: the server's far-field radius (m), horizon mode only
+local renderRadius = nil      -- fixed visual radius advertised by newer servers
+local qualitySupported, qualitySendAt = false, 0
 local cacheInfo = nil         -- the server's last 'cache' message (download cache usage); outlives levels
 local updateInfo = nil       -- a newer version on GitHub: { current, latest, url } (server updates.py)
 local updateToast = false    -- its one-time message is due (shown once the world is on screen: not behind the loading screen)
@@ -290,13 +293,18 @@ end
 -- planet radius; otherwise both go back to what they were (only if horizon mode changed them).
 local function applyHorizon()
   if not st.active then return end
-  if horizonOn then
-    horizon.applySky()
-    local v = horizon.visibleTarget(farRadius, st.visibleDistance or VISIBLE_DISTANCE, VISIBLE_DISTANCE)
-    if v and horizon.setVisibleDistance(v) then st.visibleDistance = v end
-  else
-    horizon.restoreSky()
-    if st.visibleDistance and horizon.setVisibleDistance(VISIBLE_DISTANCE) then st.visibleDistance = nil end
+  if horizonOn then horizon.applySky() else horizon.restoreSky() end
+  local fixed = settings.get('viewDistanceMode') == 'fixed'
+  local radius = horizonOn and farRadius or renderRadius
+  local target
+  if fixed then target = settings.get('viewDistanceKm') * 1000
+  elseif radius then
+    target = horizon.visibleTarget(radius, st.visibleDistance or VISIBLE_DISTANCE,
+      horizonOn and VISIBLE_DISTANCE or 2000)
+    if not target then return end
+  else target = VISIBLE_DISTANCE end
+  if (st.visibleDistance or VISIBLE_DISTANCE) ~= target and horizon.setVisibleDistance(target) then
+    st.visibleDistance = target
   end
 end
 
@@ -596,8 +604,8 @@ local function onMessage(msg)
     -- the download cache: the new server's usage follows its hello; it gets the page's size cap (the
     -- server keeps it for its next start too)
     cacheInfo = nil
-    local settings = rawget(_G, 'beamngEarth_settings')
-    if settings and settings.cacheCapGb then net.send({ type = 'cache', capGb = settings.cacheCapGb() }) end
+    local settingsExt = rawget(_G, 'beamngEarth_settings')
+    if settingsExt and settingsExt.cacheCapGb then net.send({ type = 'cache', capGb = settingsExt.cacheCapGb() }) end
     -- the on-screen credits: this session's own follow (the attribution line until then)
     credits.clear()
     -- M4: the terrain block size first (everything below may use the lattice / follow table); a
@@ -625,7 +633,14 @@ local function onMessage(msg)
     -- and the credit line for the imagery / elevation sources the server actually uses
     M.setNearVisual(msg.nearVisual)
     -- M1h: horizon mode (a server without hello.horizon: the level's sky and 100 km view distance)
+    renderRadius = tonumber(msg.renderRadius)
+    if renderRadius and (renderRadius ~= renderRadius or renderRadius <= 0 or renderRadius == math.huge) then
+      renderRadius = nil
+    end
     M.setHorizon(msg.horizon == true)
+    qualitySupported = msg.adaptiveLod == true
+    quality:setMode(settings.get('performanceMode') or 'balanced')
+    qualitySendAt = 0
     serverAttribution = (type(msg.attribution) == 'string' and msg.attribution ~= '') and msg.attribution or nil
     -- per imagery source: its credit and its area (the world map credits what its view shows)
     serverCreditsByArea = type(msg.imageryCredits) == 'table' and msg.imageryCredits or nil
@@ -1074,8 +1089,12 @@ end
 
 -- The imgui window, the on-screen credits (one text draw; the attribution line until the server
 -- sends credits) and the connection banner (in our level or world only; hidden like the credits).
+local uiActions = {}
 local function drawUi(dt)
-  ui.draw(buildView(), { teleport = M.teleport, setRebaseDistance = M.setRebaseDistance })
+  if ui.visible then
+    uiActions.teleport, uiActions.setRebaseDistance = M.teleport, M.setRebaseDistance
+    ui.draw(buildView(), uiActions)
+  end
   -- each element drawn by imgui unless its UI app is on screen (hudapps.lua)
   if not hudapps.mounted('credits') then credits.draw(st.active, creditsFallback) end
   updateBanner(dt)
@@ -1180,7 +1199,7 @@ local function onUpdate(dtReal, dtSim)
   st.clock = st.clock + dtReal
   -- the governor's frame opens first: its clock is the wall time since the last onUpdate (hptimer)
   gov:setLoading(st.placeFrames ~= nil or st.clock < st.loadingUntil or st.slowFor > SLOW_S)
-  gov:beginFrame(farfield.hasWork() or roads.hasWork())
+  gov:beginFrame(farfield.hasWork() or roads.hasWork() or trees.hasWork(st.anchorId, st.player))
   gov:chargeEngine(engineTickMs())     -- what the engine spent on last frame's new tiles (governor.lua)
   for _, msg in ipairs(net.update(dtReal)) do
     local ok, err = pcall(onMessage, msg)
@@ -1191,6 +1210,14 @@ local function onUpdate(dtReal, dtSim)
   tickMotionBlur()
 
   st.paused = (dtSim or dtReal) <= 0
+  if st.active and qualitySupported and net.isConnected() then
+    local changed = quality:update(frameMs0 / 1000, st.paused or st.pending ~= nil
+      or st.rebasing ~= nil or st.placeFrames ~= nil or st.clock < st.loadingUntil)
+    if changed or st.clock >= qualitySendAt then
+      net.send({ type = 'quality', lodScale = quality.scale })
+      qualitySendAt = st.clock + 10
+    end
+  end
   local rb = st.rebasing
   if rb then
     -- phase 2 of a rebase is due once its vehicle move reaches this frame's physics step
@@ -1218,7 +1245,7 @@ local function onUpdate(dtReal, dtSim)
     farfield.update(gov, (gov.w1 or dtReal * 1000) / 1000, st.cam, st.player)
     t = mark('far', t)
     sea.update(st.anchorId, st.player)
-    trees.update(st.anchorId, st.player)
+    trees.update(st.anchorId, st.player, gov)
     t = mark('sea+trees', t)
     local pb = nil
     if st.block then
@@ -1452,6 +1479,16 @@ function M.setHorizon(on)
   if not horizonOn then farRadius = nil end
   applyHorizon()
   return horizonOn
+end
+
+-- The settings page delegates here so status/horizon messages cannot overwrite
+-- an explicit fixed distance. Legacy servers keep their original 100 km default.
+function M.refreshViewDistance() applyHorizon() end
+
+function M.setPerformanceMode(mode)
+  quality:setMode(mode)
+  qualitySendAt = 0
+  return quality.mode
 end
 
 -- The server's far-field radius in metres (status.radius, horizon mode). Returns the view distance in use.

@@ -240,10 +240,12 @@ const settingsSchema = [
   {
     name: "World",
     items: [
+      { id: "performanceMode", type: "select", default: "balanced", name: "Outer terrain detail", desc: "Balanced uses the host's detail. Low requests fewer detailed tiles outside the near driving area. Auto gradually reduces outer detail during sustained slow frames, targeting about 30 FPS. Near terrain and collisions stay the same for all players. Requires a compatible world server; it cannot guarantee a frame rate.",
+        options: [ { label: "Balanced", value: "balanced" }, { label: "Low", value: "low" }, { label: "Auto (30 FPS target)", value: "auto" } ] },
       { id: "rebaseDistance", type: "float", min: 2000, max: 16000, step: 100, default: 15000, name: "Rebase distance (m)", desc: "How far from the anchor origin the world moves under the player (origin rebase). 15 km keeps float precision at ~1 mm; beyond 16 km precision halves." },
-      { id: "viewDistanceMode", type: "select", default: "horizon", name: "View distance", desc: "Real horizon (the default): the far field reaches the true line-of-sight horizon and the view distance follows it (the server's --horizon, on by default in mesh mode). Fixed: the renderer's view distance below.",
-        options: [ { label: "Fixed distance", value: "fixed" }, { label: "Real horizon (v1.4 M1h)", value: "horizon" } ] },
-      { id: "viewDistanceKm", type: "float", min: 20, max: 1000, step: 10, default: 100, name: "Fixed view distance (km)", desc: "The renderer's view distance in km (LevelInfo visibleDistance) in fixed mode. The far field itself extends 80 km today." },
+      { id: "viewDistanceMode", type: "select", default: "horizon", name: "View distance", desc: "Follow the world server's fixed radius or real horizon. Fixed uses the renderer's view distance below; it does not change which tiles the host generates.",
+        options: [ { label: "Fixed distance", value: "fixed" }, { label: "Follow server", value: "horizon" } ] },
+      { id: "viewDistanceKm", type: "float", min: 2, max: 1000, step: 1, default: 100, name: "Fixed view distance (km)", desc: "The renderer's view distance in fixed mode. The host's performance profile separately limits terrain generation." },
       { id: "hazeStrength", type: "float", min: 0, max: 1, step: 0.05, default: 0, name: "Distance haze (placeholder)", desc: "Strength of the distance haze. Placeholder: the haze comes with the real-horizon far field (v1.4 M1h); this value is saved but has no effect yet.", disabled: true },
       { id: "skyMode", type: "select", default: "real", name: "Sky", desc: "Real time: the sun, moon and stars follow the real clock and date at the player's position. Manual: hands off, use the game's own Time & Weather controls. Changing the time in the pause menu (or another mod changing it) switches this to Manual by itself; choose Real time to go back.",
         note: "Changing the time in the pause menu switches this to Manual.",

@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0,str(Path(__file__).resolve().parent))
@@ -85,6 +86,46 @@ class CentralServerTest(unittest.IsolatedAsyncioTestCase):
         await self.clients[0][1].drain()
         await self.until(self.clients[0][0],'cache')
         self.assertEqual(self.disk.cap,40*10**9)
+
+    async def test_per_client_quality_is_bounded_and_preserves_near_tiles(self):
+        for _ in range(2):
+            reader,writer=await self.connect()
+            hello,_=await self.until(reader,'hello')
+            self.assertTrue(hello['adaptiveLod'])
+        one,two=tuple(self.world.connections)
+        base_near=dict(self.world.near_radii)
+        layout=self.world.layout
+        import farfield
+        reference,_=farfield.select(73,97,kfun=one.visual_k,radius=self.world.radius,
+                                   min_level=self.world.min_level,radii=base_near,layout=layout)
+        # Use the authenticated TCP connection for a real client preference.
+        writer=self.clients[0][1]
+        writer.write(protocol.encode({'type':'quality','lodScale':.55})); await writer.drain()
+        for _ in range(100):
+            if any(c.visual_scale==.55 for c in self.world.connections): break
+            await asyncio.sleep(.01)
+        self.assertEqual(sorted(c.visual_scale for c in self.world.connections),[.55,1])
+        changed=next(c for c in self.world.connections if c.visual_scale==.55)
+        selected,_=farfield.select(73,97,kfun=changed.visual_k,radius=self.world.radius,
+                                  min_level=self.world.min_level,radii=base_near,layout=layout)
+        exact=lambda tiles:{k for k,t in tiles.items() if t.level==layout.exact_level}
+        self.assertEqual(exact(reference),exact(selected))
+        self.assertLess(len(selected),len(reference))
+        self.assertEqual(self.world.near_radii,base_near)
+        for value in (True,None,'low',.1,1.1,float('nan'),float('inf')):
+            changed.on_quality({'lodScale':value})
+            self.assertEqual(changed.visual_scale,.55)
+        with patch('earthd.time.monotonic',return_value=changed.last_quality_at+.5):
+            changed.on_quality({'lodScale':1})
+            self.assertEqual(changed.visual_scale,.55,'rapid edits cannot repeatedly rebuild LOD')
+        with patch('earthd.time.monotonic',return_value=changed.last_quality_at+2):
+            changed.on_quality({'lodScale':1})
+            self.assertEqual(changed.visual_scale,1)
+        # Screen-space refinement must not silently undo the lower distance detail.
+        changed.visual_scale=.55; changed.active=1; changed.cam_aid=1
+        changed.cam={'x':0,'y':0,'z':2000,'h':1080,'fovDeg':60}
+        self.world.lod_px=2
+        self.assertAlmostEqual(changed.view().tau,2/.55)
 
     async def test_binary_and_legacy_clients_receive_identical_generated_terrain(self):
         for binary in (True,False):

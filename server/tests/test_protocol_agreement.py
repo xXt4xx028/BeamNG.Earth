@@ -92,7 +92,8 @@ MOD_TO_SERVER = {
     "hello": {"protocol": F(int), "format": F(int), "modVersion": F(str), "sessions": F((list, dict), OPT),
               # a reconnect: the pooled far-tile slots [[slot, serial], ...] the mod's objects hold for that session
               "slotSession": F(str, OPT), "slotsHeld": F((list, dict), OPT),
-              "remoteAuth": F(str, OPT), "remoteAssets": F(int, OPT)},
+              "remoteAuth": F(str, OPT), "remoteAssets": F(int, OPT), "remoteAssetBinary": F(int, OPT)},
+    "quality": {"lodScale": F(NUM)},       # negotiated hello.adaptiveLod; only outer visual detail
     "asset_reset": {},
     "prepare_anchor": {"requestId": F(int), "lat": F(NUM), "lon": F(NUM), "cx": F(NUM, OPT), "cy": F(NUM, OPT)},
     "commit_anchor": {"anchorId": F(int)},
@@ -135,6 +136,7 @@ SERVER_TO_MOD = {
               "farFormat": F(str), "material": F(str),
               "nearVisual": F(str), "attribution": F(str),          # protocol 4
               "earthMP": F(dict, OPT),        # fork: generator compatibility fingerprint
+              "adaptiveLod": F(bool, OPT), "renderRadius": F(NUM, OPT),
               "cells": F(int, OPT),             # v1.4 M1: cells per tile edge, FORMAT 4 only
               "blockSize": F(int, OPT),         # v1.4 M4: terrain block size, only when not 1024 (--block 512)
               "horizon": F(bool, OPT),          # v1.4 M1h: true with --horizon only
@@ -387,7 +389,7 @@ class CacheAgreementTest(unittest.TestCase):
         core = (LUA / "core.lua").read_text()
         on_msg = lua_function(core, "onMessage")
         hello = on_msg[on_msg.index("t == 'hello'"):on_msg.index("t == 'status'")]
-        self.assertIn("net.send({ type = 'cache', capGb = settings.cacheCapGb() })", hello)
+        self.assertIn("net.send({ type = 'cache', capGb = settingsExt.cacheCapGb() })", hello)
         self.assertIn("cacheInfo = nil", hello)
         self.assertIn("cacheInfo = nil", on_msg[on_msg.index("t == '_disconnected'"):on_msg.index("t == 'hello'")])
         self.assertIn("cacheInfo = { usedBytes = tonumber(msg.usedBytes)", on_msg[on_msg.index("t == 'cache'"):])

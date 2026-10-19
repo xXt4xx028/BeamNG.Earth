@@ -36,10 +36,11 @@ M.LEVEL_ID = 'beamng_earth'
 
 -- key -> { kind = 'number'|'bool'|'enum', default, min, max, values, label }. Order = ORDER.
 M.SCHEMA = {
+  performanceMode = { kind = 'enum', default = 'balanced', values = { 'balanced', 'low', 'auto' }, label = 'Outer terrain detail' },
   rebaseDistance = { kind = 'number', default = rebase.DEFAULT_DISTANCE, min = rebase.MIN_DISTANCE,
     max = rebase.MAX_DISTANCE, label = 'Rebase distance (m)' },
   viewDistanceMode = { kind = 'enum', default = 'horizon', values = { 'fixed', 'horizon' }, label = 'View distance' },
-  viewDistanceKm = { kind = 'number', default = 100, min = 20, max = 1000, label = 'Fixed view distance (km)' },
+  viewDistanceKm = { kind = 'number', default = 100, min = 2, max = 1000, label = 'Fixed view distance (km)' },
   hazeStrength = { kind = 'number', default = 0, min = 0, max = 1, label = 'Distance haze (placeholder)' },
   skyMode = { kind = 'enum', default = 'real', values = { 'real', 'manual' }, label = 'Sky' },
   clouds = { kind = 'bool', default = true, label = 'Clouds' },
@@ -67,7 +68,7 @@ M.SCHEMA = {
   -- not on the page (not in ORDER): the welcome version last shown (EarthWelcome.vue)
   welcomeSeen = { kind = 'number', default = 0, min = 0, max = 1000, label = 'Welcome page seen (version)' },
 }
-M.ORDER = { 'rebaseDistance', 'viewDistanceMode', 'viewDistanceKm', 'hazeStrength', 'skyMode', 'clouds',
+M.ORDER = { 'performanceMode', 'rebaseDistance', 'viewDistanceMode', 'viewDistanceKm', 'hazeStrength', 'skyMode', 'clouds',
   'weatherMode', 'realGravity', 'groundCover', 'groundCoverDensity', 'roads', 'hudVisible', 'statusBar',
   'placeNamesOnline', 'creditsVisible',
   'creditsCorner', 'creditsSize', 'cacheCapGb', 'devOutlineKm', 'devMapKm' }
@@ -187,6 +188,8 @@ local function ext(name) return rawget(_G, name) end
 -- level, and the default (the level file's 100 km) never touches the engine: nothing changes until
 -- the player picks another distance.
 local function applyViewDistance()
+  local core = ext('beamngEarth_core')
+  if core and core.refreshViewDistance then core.refreshViewDistance(); return end
   local li = scenetree and scenetree.theLevelInfo
   local level = rawget(_G, 'getCurrentLevelIdentifier') and getCurrentLevelIdentifier()
   if values.viewDistanceMode ~= 'fixed' then
@@ -208,6 +211,10 @@ local function applyViewDistance()
 end
 
 M.APPLY = {
+  performanceMode = function(v)
+    local core = ext('beamngEarth_core')
+    if core and core.setPerformanceMode then core.setPerformanceMode(v) end
+  end,
   rebaseDistance = function(v)
     local core = ext('beamngEarth_core')
     if core and core.setRebaseDistance then core.setRebaseDistance(v) else rebase.setDistance(v) end

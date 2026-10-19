@@ -22,7 +22,7 @@ class CentralStartupTest(unittest.TestCase):
                   '--publish-config',str(config),'--public-host','127.0.0.1','--offline',
                   '--block-process','off','--roads','off','--surface','off','--trees','off',
                   '--airports','off','--sea','off','--gravity','off','--weather','off',
-                  '--imagery','off','--map-tiles','off','--update-check','off','--no-horizon','--pin','off']
+                  '--imagery','off','--map-tiles','off','--update-check','off','--performance','balanced','--pin','off']
             process=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
             try:
                 deadline=time.monotonic()+20
@@ -43,6 +43,9 @@ class CentralStartupTest(unittest.TestCase):
                         hello=json.loads(stream.read(size))
                     self.assertEqual(hello['type'],'hello')
                     self.assertEqual(hello['earthMP']['id'],data['profile'])
+                    self.assertNotIn('horizon',hello)
+                    self.assertEqual(hello['renderRadius'],12000)
+                    self.assertTrue(hello['adaptiveLod'])
             finally:
                 process.terminate()
                 output,_=process.communicate(timeout=10)

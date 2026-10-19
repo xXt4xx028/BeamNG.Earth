@@ -28,7 +28,7 @@ def build(out, bridge_exe=None):
         shutil.copy2(path, plugin / path.name)
     shutil.copy2(ROOT / 'docs' / 'BEAMMP-CENTRAL.md', out / 'README-BEAMMP.md')
     docs = ['BEAMMP-CENTRAL.md','BEAMMP-CLIENT-BRIDGE.md','BEAMMP-REGIONAL.md','BEAMMP-TRANSPORT-REVIEW.md',
-            'BEAMMP-PERFORMANCE.md']
+            'BEAMMP-PERFORMANCE.md','BEAMMP-WORLD-PERFORMANCE.md']
     for name in docs[1:] + ['BEAMMP.md','BEAMMP-CENTRAL.md']:
         shutil.copy2(ROOT/'docs'/name,out/name)
     coverage='2026-10-18-mexico-patagonia-coverage.json'
@@ -36,6 +36,8 @@ def build(out, bridge_exe=None):
     shutil.copy2(ROOT/'docs/research'/coverage,out/'research'/coverage)
     performance='2026-10-18-mp-performance-alpha4.json'
     shutil.copy2(ROOT/'docs/research'/performance,out/'research'/performance)
+    world_performance='2026-10-18-world-performance-alpha5.json'
+    shutil.copy2(ROOT/'docs/research'/world_performance,out/'research'/world_performance)
     bridge_dir = out/'ClientBridge'
     bridge_dir.mkdir(parents=True,exist_ok=True)
     shutil.copy2(ROOT/'tools/earth_client_bridge.py',bridge_dir/'earth_client_bridge.py')
@@ -61,7 +63,9 @@ def build(out, bridge_exe=None):
             archive.write(ROOT/'docs'/name,'BeamNG.Earth-BeamMP/docs/'+name)
         archive.write(ROOT/'docs/research'/coverage,'BeamNG.Earth-BeamMP/docs/research/'+coverage)
         archive.write(ROOT/'docs/research'/performance,'BeamNG.Earth-BeamMP/docs/research/'+performance)
-        for name in ('earth_client_bridge.py','import_elevation.py','check_regional_data.py'):
+        archive.write(ROOT/'docs/research'/world_performance,'BeamNG.Earth-BeamMP/docs/research/'+world_performance)
+        for name in ('earth_client_bridge.py','import_elevation.py','check_regional_data.py','benchmark_mp_world.py',
+                     'mcp.py','probe_mp_runtime.py'):
             archive.write(ROOT/'tools'/name,'BeamNG.Earth-BeamMP/tools/'+name)
         for name in ('main.lua','EarthSync.json'):
             path=ROOT/'beammp'/'Resources'/'Server'/'EarthSync'/name

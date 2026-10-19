@@ -189,7 +189,7 @@ function M.slotsHeld(sess)
   return out
 end
 
-local function now() return os.clock() * 1000 end
+local now = stopwatch.clock() -- wall time; process CPU time includes unrelated engine threads
 
 local function dropTile(key)
   local t = tiles[key]
@@ -554,7 +554,27 @@ local function releaseGhosts(player)
 end
 
 -- Once per frame (core onUpdate): deletions, then creations, within the governor's budget.
+local function collisionDue()
+  return (collisionDirty and sinceReload() > M.RELOAD_EVERY_S * 1000)
+      or (deletesDirty and sinceReload() > M.RELOAD_DELETES_S * 1000)
+end
+
+local function reloadCollision(gov)
+  local t0 = now()
+  noteNewColliders()
+  be:reloadCollision()
+  collisionDirty, deletesDirty, sinceReload = false, false, stopwatch.new()
+  gov:charge('roadWalk', now() - t0)
+end
+
 function M.update(gov, currentAnchor, player)
+  if gov.blocked or (gov.isHeavyFrame and gov:isHeavyFrame()) then return end
+  -- Ask BEFORE importing anything: otherwise every import resets the quiet-frame
+  -- gate and collision rebuilds can wait forever. Terrain/rebase heavy slots win.
+  if gov.requestHeavy and collisionDue() then
+    if gov:requestHeavy(false) then reloadCollision(gov) end
+    return
+  end
   if currentAnchor then switchAnchor(currentAnchor) end
   releaseGhosts(player)
   while #deleteQ > 0 and gov:try('roadDelete') do
@@ -612,14 +632,9 @@ function M.update(gov, currentAnchor, player)
     end
   end
   updateFar(gov)                -- far buildings: only with the near meshes all made (they share the budget)
-  if (collisionDirty and sinceReload() > M.RELOAD_EVERY_S * 1000)
-      or (deletesDirty and sinceReload() > M.RELOAD_DELETES_S * 1000) then
-    local t0 = now()
-    noteNewColliders()
-    be:reloadCollision()
-    collisionDirty, deletesDirty, sinceReload = false, false, stopwatch.new()
-    gov:charge('roadWalk', now() - t0)
-  end
+  -- Compatibility with simple callers; the real governor handles this next
+  -- frame in a heavy slot, never in the same frame as these imports.
+  if not gov.requestHeavy and collisionDue() then reloadCollision(gov) end
 end
 
 -- A colliding mesh (sidewalks, bridge decks) never turns solid around the player's car (2026-10-13: the

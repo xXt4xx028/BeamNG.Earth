@@ -795,6 +795,34 @@ T.check(cs.clears == 1 and cs.clearedBytes == 1034567890 and cs.usedBytes == 2e8
 serverSend({ type = 'cache', v = 1, usedBytes = 210000000, capBytes = 0, files = 13, ready = true, managed = true })
 frames(2)
 T.check(core.cacheState().clears == 1 and core.cacheState().clearedBytes == 1034567890, 'later usage keeps the last clear')
+-- New servers announce bounded fixed rendering and per-client outer LOD.
+local prefs = require('beamngEarth/settings')
+beamngEarth_core = core
+serverSend({ type = 'hello', protocol = 4, format = 4, cells = 64, adaptiveLod = true, renderRadius = 12000,
+  serverVersion = '0.4.0', sessionId = 's12', farFormat = 'cdae', material = 'bngEarthFar_v3', nearVisual = 'mesh' })
+frames(3)
+T.near(scenetree.theLevelInfo.visibleDistance, 13200, 1e-6, 'fixed host radius drives render distance (+10%)')
+T.check(#received('quality') > 0 and received('quality')[#received('quality')].lodScale == 1,
+  'compatible server gets this client quality preference')
+prefs.set('performanceMode', 'low'); frames(3)
+T.check(received('quality')[#received('quality')].lodScale == 0.7, 'menu sends reduced outer LOD to host')
+prefs.set('viewDistanceMode', 'fixed'); prefs.set('viewDistanceKm', 6)
+T.check(scenetree.theLevelInfo.visibleDistance == 6000, 'fixed render distance applies through core')
+core.setHorizon(true); core.setFarRadius(500000)
+T.check(scenetree.theLevelInfo.visibleDistance == 6000, 'horizon status cannot overwrite explicit fixed setting')
+core.setHorizon(false); prefs.set('viewDistanceMode', 'horizon')
+T.near(scenetree.theLevelInfo.visibleDistance, 13200, 1e-6, 'follow server restores bounded profile distance')
+prefs.set('performanceMode', 'balanced')
+serverSend({ type = 'hello', protocol = 4, format = 4, cells = 64,
+  serverVersion = '0.4.0', sessionId = 's12', farFormat = 'cdae', material = 'bngEarthFar_v3', nearVisual = 'mesh' })
+frames(3)
+local nq = #received('quality')
+core.setPerformanceMode('low'); frames(3)
+T.check(#received('quality') == nq, 'old server receives no quality messages')
+core.setPerformanceMode('balanced')
+T.check(scenetree.theLevelInfo.visibleDistance == 100000, 'legacy server retains its original render distance')
+beamngEarth_core = nil
+
 core.reconnect()
 T.check(core.cacheState() == nil and not core.cacheClear(), 'disconnected: numbers gone, no request sent')
 beamngEarth_settings = nil
