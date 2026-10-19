@@ -6,6 +6,15 @@ textures over a separate authenticated Earth connection. **Players do not run
 Python in this mode.** They still render the world and run vehicle physics in
 BeamNG, and the engine needs local temporary copies of received files.
 
+**Network limitation:** upstream's in-game probes found that BeamNG's LuaSocket
+sandbox rejects direct public Internet connections (`connect restricted`), while
+localhost works; its documented allowlist includes LAN addresses. This prototype
+therefore targets LAN or a VPN exposing an address accepted by that sandbox.
+The VPN path still needs testing in the installed game version. A public BeamMP
+server address alone does not make the separate Earth asset socket reachable.
+For Internet hosting, players need a compatible private network/VPN or a local
+tunnel endpoint. There is no bundled tunnel or sandbox bypass.
+
 The host runs two processes:
 
 1. **BeamMP-Server**, with the `EarthSync` Lua resource and the client ZIP.
@@ -76,6 +85,8 @@ python -m venv .venv
 
 Replace both the directory and address with real values. The default bind address
 is loopback, so remote players require an explicit reachable bind address.
+Despite the option name `--public-host`, use the private/VPN address that the game
+can access; an arbitrary public IP or hostname may be blocked by its sandbox.
 No port forwarding, firewall changes or deployment are performed by the builder.
 
 The helper starts one generator with a 40 GB cache, at most eight connections,

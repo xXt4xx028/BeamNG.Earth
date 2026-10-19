@@ -25,7 +25,7 @@ def command(beammp_dir, data_dir, public_host, listen='127.0.0.1', port=47613):
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--beammp-dir',required=True,type=Path,help='dedicated test BeamMP server folder')
-    parser.add_argument('--public-host',required=True,help='hostname/IP reachable by players, preferably a VPN address')
+    parser.add_argument('--public-host',required=True,help='LAN/VPN address accepted by the game socket sandbox; direct public Internet is unsupported')
     parser.add_argument('--listen',default='127.0.0.1',help='explicit bind address; default is local-only')
     parser.add_argument('--data-dir',type=Path)
     parser.add_argument('--port',type=int,default=47613)
@@ -39,4 +39,5 @@ if __name__ == '__main__':
     shutil.copy2(ROOT/'beammp'/'Resources'/'Server'/'EarthSync'/'main.lua',resource/'main.lua')
     print('Shared download cache: 40 GB target for all 8 clients; generated runtime files are additional.',flush=True)
     print('Keep BeamMP-Server running separately with MaxPlayers = 8 and the Earth client ZIP.',flush=True)
+    print('Earth asset connections require LAN or a compatible VPN/local tunnel; the game may block public IPs.',flush=True)
     raise SystemExit(subprocess.call(command(host,data,args.public_host,args.listen,args.port)))
