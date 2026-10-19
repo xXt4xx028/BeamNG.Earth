@@ -25,6 +25,10 @@ docs/research/ortho/
 
 # install.py / tools/package.py output
 .venv/
+.world-token
+.remote-token
+EarthSync.runtime.json
+EarthWorld/
 .beamng_earth.json
 dist/
 native/earthfast/target/

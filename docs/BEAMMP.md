@@ -1,5 +1,8 @@
 # BeamNG.Earth — experimental BeamMP integration
 
+For the newer **central 40 GB / 8-player host mode**, use [BEAMMP-CENTRAL.md](BEAMMP-CENTRAL.md).
+The local-generator instructions below describe the earlier distributed mode.
+
 This fork targets **independent exploration**: each player streams the area around
 their own vehicle, with their own floating origin. Coordinates received from
 another player are converted through the geographic frames before BeamMP uses

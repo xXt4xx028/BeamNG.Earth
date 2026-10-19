@@ -120,6 +120,7 @@ import cpupin  # noqa: E402
 import netfetch  # noqa: E402
 import protocol  # noqa: E402
 import mpprofile  # noqa: E402
+import remoteassets  # noqa: E402
 import weather as weathermod  # noqa: E402
 
 PROTOCOL = 4
@@ -1353,6 +1354,11 @@ class Server:
         last two committed ones, the last two handed to the mod, or `fresh` (the terrain
         just built: a request about to be answered, or the prefetch the mod asks for next)."""
         keep = set(self.hm_committed) | set(self.hm_sent)
+        for connection in self.connections:
+            keep.update(getattr(connection,'protected_terrain',()))
+            block = getattr(connection,'block',None)
+            if connection.active is not None and block is not None:
+                keep.add((connection.active,block.cx,block.cy))
         if fresh is not None:
             keep.add(fresh)
         # The first terrain of an anchor no connection has committed yet: anchor_ready
@@ -1679,6 +1685,15 @@ class Server:
             out |= c.held
         return out
 
+    def protected_anchors(self):
+        """Active/pending origins are independent across remote players."""
+        out = self.held_anchors()
+        for c in self.connections:
+            if c.active is not None:
+                out.add(c.active)
+            out.update(key[0] for key in getattr(c,'protected_terrain',()))
+        return out
+
     def _tile_done(self, ck, fut):
         self.tile_inflight.pop(ck, None)
         if fut.cancelled() or fut.exception() is not None:
@@ -1906,16 +1921,17 @@ class Server:
             # the mod may still show a previous anchor's tiles long after far_done (it applies
             # far_removes only once every tile received before them is shown; a rebase reload
             # can take minutes at speed): a file deleted under a live TSStatic gets reloaded
-            if any(a < keep_from for a in self.held_anchors()):
+            self.prune(keep_from)
+            if any(a < keep_from for a in self.protected_anchors()):
                 loop.call_later(self.prune_recheck, run)
                 return
             self._prune_scheduled.discard(keep_from)
-            self.prune(keep_from)
         loop.call_later(self.prune_delay, run)
 
     def prune(self, keep_from):
         """Forget anchors older than keep_from and delete their files."""
-        for aid in [a for a in self.anchors if a < keep_from]:
+        protected = self.protected_anchors()
+        for aid in [a for a in self.anchors if a < keep_from and a not in protected]:
             del self.anchors[aid]
             self.horizon_grids.pop(aid, None)
             self.horizon_failed.pop(aid, None)
@@ -1999,6 +2015,9 @@ class Connection:
     def __init__(self, server, reader, writer):
         self.s = server
         self.reader, self.writer = reader, writer
+        self.asset_sender = None
+        self.map_files = None
+        self.protected_terrain = deque(maxlen=6) # ready/pending/current terrain for this particular player
         self.loop = asyncio.get_running_loop()
         self.peer = writer.get_extra_info("peername")
         self.tasks = set()
@@ -2086,9 +2105,11 @@ class Connection:
                 continue
             if isinstance(layer, str) and layer in maptilesmod.LAYERS:
                 want.append((layer, z, x, y))
-        files = self.s.map_files
+        files = self.map_files if getattr(self.s, 'remote_assets', False) else self.s.map_files
         if files is None:
-            files = self.s.map_files = maptilesmod.TileFiles(mt, os.path.join(self.s.root, "maptiles"))
+            files = maptilesmod.TileFiles(mt, os.path.join(self.s.root, "maptiles"))
+            if getattr(self.s, 'remote_assets', False): self.map_files = files
+            else: self.s.map_files = files
         loop, send = self.loop, self.send
 
         def ready(key, ok):                     # (a worker thread) the connection that asked last hears of it
@@ -2174,7 +2195,10 @@ class Connection:
 
     def send(self, msg):
         if not self.writer.is_closing():
-            self.writer.write(protocol.encode(msg))
+            if self.asset_sender:
+                self.asset_sender.put(msg)
+            else:
+                self.writer.write(protocol.encode(msg))
 
     def backlog(self):
         """status.backlog: desired tiles of the current anchor that are not shown yet (V1_4_SPEC §4)."""
@@ -2209,10 +2233,33 @@ class Connection:
             self.status(self.last_status)
 
     async def run(self):
+        first = None
+        if getattr(self.s, 'remote_assets', False):
+            import hmac
+            if len(self.s.connections) >= self.s.max_clients:
+                self.writer.write(protocol.encode({'type':'status','text':f'Earth server full ({self.s.max_clients} players maximum)','backlog':0}))
+                self.writer.close()
+                return
+            self.s.connections.add(self) # reserve a bounded slot during authentication
+            try:
+                first = await asyncio.wait_for(protocol.read_message(self.reader), 5)
+                if not first or first.get('type') != 'hello' or first.get('remoteAssets') != 1:
+                    raise ValueError('remote handshake required')
+                token = first.get('remoteAuth')
+                if not isinstance(token,str) or not token.isascii() or len(token)>256 or not hmac.compare_digest(token,self.s.remote_token):
+                    raise ValueError('remote authentication failed')
+            except (ValueError, asyncio.TimeoutError, protocol.ProtocolError, ConnectionError):
+                self.s.connections.discard(self)
+                self.writer.close()
+                return
+            self.asset_sender = remoteassets.Sender(self.writer, self.s.user_dir)
+            self.asset_sender.start()
         log.info("client connected %s", self.peer)
         self.s.connections.add(self)
         self.streamer = asyncio.create_task(self.stream())
         try:
+            if first is not None:
+                self.dispatch(first)
             while True:
                 msg = await protocol.read_message(self.reader)
                 if msg is None:
@@ -2235,6 +2282,10 @@ class Connection:
             self.s.drop_claims(self)
             self.streamer.cancel()
             self.credits.close()
+            if self.map_files is not None:
+                self.map_files.close()
+            if self.asset_sender:
+                await self.asset_sender.close()
             for t in list(self.tasks):
                 t.cancel()
             self.writer.close()
@@ -2248,6 +2299,9 @@ class Connection:
 
     def dispatch(self, msg):
         kind = msg["type"]
+        if kind == 'asset_reset' and self.asset_sender:
+            self.asset_sender.sent.clear()
+            return
         if kind == "hello":
             lay = self.s.layout
             fmt = msg.get("format", lay.format)
@@ -2334,6 +2388,9 @@ class Connection:
         cache = self.s.cache
         if cache is None:
             return
+        if getattr(self.s, 'remote_assets', False):
+            self.send(cache.message()) # central cache is controlled by the host, never by players
+            return
         cap = msg.get("capGb")
         if cap is not None:
             if isinstance(cap, bool) or not isinstance(cap, (int, float)):
@@ -2415,6 +2472,7 @@ class Connection:
         anchor.first_terrain = (cx, cy)
         self.s.anchors[anchor.id] = anchor
         self.s.hm_sent.append(key)
+        self.protected_terrain.append(key)
         # groundZ is None when (0, 0) lies outside the block (a resync around a distant player)
         gz = info["groundZ"]
         log.info("anchor %d (%.5f, %.5f) ready in %.2f s, terrain at (%.0f, %.0f), groundZ %s; dem %s",
@@ -2455,6 +2513,7 @@ class Connection:
             return
         key = (aid, cx, cy)
         self.s.hm_sent.append(key)
+        self.protected_terrain.append(key)
         log.info("terrain_ready %s after %.0f ms", key, (time.perf_counter() - t0) * 1000)
         self.send({"type": "terrain_ready", "requestId": req, "anchorId": aid, **self.terrain_msg(key, info)})
 
@@ -2497,6 +2556,7 @@ class Connection:
         # Tiles sent but not swapped in are dropped by the mod at the anchor switch.
         self._retire((self.active, k) for k in self.sent)
         self.active = aid
+        self.protected_terrain = deque((key for key in self.protected_terrain if key[0] >= aid),maxlen=6)
         self.desired, self.sent, self.groups, self.queue, self.qi = {}, {}, [], [], 0
         self.refined, self.node_changed = set(), {}
         self.failed.clear()
@@ -3120,6 +3180,8 @@ class Connection:
 
 
 async def main_async(args):
+    if getattr(args, 'remote_assets', False) and args.cache_cap is None:
+        args.cache_cap = 40
     fmt = args.far_format
     if fmt == "cdae":
         v = cdae.engine_version(args.user_dir)
@@ -3203,6 +3265,22 @@ async def main_async(args):
                     sea=seacarvemod.SeaCarver(mapdata, args.cache_dir) if args.sea == "on" else None,
                     vegetation=(vegetationmod.Vegetation(mapdata, args.cache_dir) if args.trees == "on" else None))
     server.update_check = args.update_check == "on"
+    server.remote_assets = getattr(args, 'remote_assets', False)
+    server.max_clients = getattr(args, 'max_clients', 8)
+    if server.remote_assets:
+        from pathlib import Path
+        import secrets
+        token_path = Path(args.auth_token_file or os.path.join(args.cache_dir,'.remote-token'))
+        token_path.parent.mkdir(parents=True,exist_ok=True)
+        try:
+            with token_path.open('x',encoding='utf-8') as handle:
+                handle.write(secrets.token_hex(32))
+            os.chmod(token_path,0o600)
+        except FileExistsError:
+            pass
+        server.remote_token = token_path.read_text(encoding='utf-8').strip()
+        if not server.remote_token.isascii() or not 32 <= len(server.remote_token) <= 256:
+            raise ValueError('remote token file must contain at least 32 characters')
     server.lod_px = args.lod_px
 
     server.game_cpus = getattr(args, "game_cpus", None)    # (cpupin.py: the game pinned at each hello)
@@ -3264,9 +3342,22 @@ async def main_async(args):
         except OSError as e:
             log.warning("map tiles off: %s", e)
     srv = await asyncio.start_server(
-        lambda r, w: Connection(server, r, w).run(), "127.0.0.1", args.port)
+        lambda r, w: Connection(server, r, w).run(), getattr(args,'listen','127.0.0.1'), args.port)
     port = srv.sockets[0].getsockname()[1]
-    print(f"earthd listening on 127.0.0.1:{port} session {server.sid} -> {server.out_dir} "
+    cache_reconciler = asyncio.create_task(remoteassets.reconcile_cache(disk)) if server.remote_assets else None
+    if server.remote_assets and getattr(args,'publish_config',None):
+        from pathlib import Path
+        import json
+        destination = Path(args.publish_config)
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        config = {'profile':mpprofile.for_server(server,SERVER_VERSION)['id'],
+                  'maxPlayers':server.max_clients,'cacheGB':args.cache_cap,
+                  'worldServer':{'host':args.public_host or '127.0.0.1','port':port,
+                                 'token':server.remote_token,'assetsProtocol':1}}
+        temporary = destination.with_suffix('.tmp')
+        temporary.write_text(json.dumps(config,indent=2),encoding='utf-8')
+        os.replace(temporary,destination)
+    print(f"earthd listening on {getattr(args,'listen','127.0.0.1')}:{port} session {server.sid} -> {server.out_dir} "
           f"(far tiles: {fmt}, near visual: {server.near_visual}, cells: {server.layout.cells} "
           f"(format {server.layout.format}), block: {server.layout.block}, "
           f"horizon: {'on' if server.horizon else 'off'}, "
@@ -3284,6 +3375,8 @@ async def main_async(args):
         ticker.cancel()
         lagger.cancel()
         sweeper.cancel()
+        if cache_reconciler is not None:
+            cache_reconciler.cancel()
         if map_srv is not None:
             map_srv.close()
         net.close()                 # today's request counters
@@ -3325,6 +3418,12 @@ def parse_radii(text):
 def main():
     home = os.path.expanduser("~")
     ap = argparse.ArgumentParser(description="BeamNG.Earth companion server")
+    ap.add_argument('--listen',default='127.0.0.1',help='listen address; external addresses require --remote-assets')
+    ap.add_argument('--remote-assets',action='store_true',help='authenticated central generator; transfer files to game clients')
+    ap.add_argument('--max-clients',type=int,choices=range(1,9),default=8,help='remote connection limit (1-8)')
+    ap.add_argument('--auth-token-file',help='persistent remote token (created if absent)')
+    ap.add_argument('--publish-config',help='write EarthSync server resource configuration after startup')
+    ap.add_argument('--public-host',help='reachable hostname/IP announced through BeamMP')
     ap.add_argument("--port", type=int, default=47613, help="TCP port on 127.0.0.1 (0 = any free port)")
     ap.add_argument("--user-dir", default=(os.path.join(os.environ.get("LOCALAPPDATA", home), "BeamNG", "BeamNG.drive",
                                                      "current") if sys.platform == "win32"
@@ -3480,6 +3579,8 @@ def main():
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
     args.cells = resolve_cells(args.cells, args.near_visual)
+    if args.listen not in ('127.0.0.1','localhost','::1') and not args.remote_assets:
+        ap.error('external listening requires --remote-assets authentication and file delivery')
     args.block = resolve_block(args.block, args.near_visual)
     args.horizon = resolve_horizon(args.horizon, args.near_visual)
     args.colormatch = resolve_colormatch(args.colormatch, args.imagery)

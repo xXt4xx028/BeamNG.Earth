@@ -91,7 +91,9 @@ MOD_TO_SERVER = {
     # restarted server keeps an earlier run's folder named here, docs/ROADMAP.md "Robustness" 3)
     "hello": {"protocol": F(int), "format": F(int), "modVersion": F(str), "sessions": F((list, dict), OPT),
               # a reconnect: the pooled far-tile slots [[slot, serial], ...] the mod's objects hold for that session
-              "slotSession": F(str, OPT), "slotsHeld": F((list, dict), OPT)},
+              "slotSession": F(str, OPT), "slotsHeld": F((list, dict), OPT),
+              "remoteAuth": F(str, OPT), "remoteAssets": F(int, OPT)},
+    "asset_reset": {},
     "prepare_anchor": {"requestId": F(int), "lat": F(NUM), "lon": F(NUM), "cx": F(NUM, OPT), "cy": F(NUM, OPT)},
     "commit_anchor": {"anchorId": F(int)},
     "prepare_terrain": {"requestId": F(int), "anchorId": F(int), "cx": F(NUM), "cy": F(NUM)},

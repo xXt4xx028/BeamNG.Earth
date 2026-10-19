@@ -5,6 +5,9 @@
 > It has automated tests but has **not been validated in a live two-client session**.
 > Use the companion from this fork; upstream binaries do not contain the integration.
 
+> **Central host mode (alpha.2):** [one shared 40 GB cache, up to 8 players](docs/BEAMMP-CENTRAL.md).
+> The host generates and streams assets; players receive them through the mod without running Python.
+
 A 1:1 scale, streamed Earth for [BeamNG.drive](https://www.beamng.com/): drive anywhere on the
 planet on real elevation data and satellite imagery, with distance-based level of detail and the
 real curvature of the Earth.

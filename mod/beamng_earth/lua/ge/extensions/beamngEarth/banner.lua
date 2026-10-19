@@ -79,11 +79,15 @@ function M.compute(info, t)
   if info.net ~= 'connected' then
     if not info.everConnected then
       if (t or 0) < M.STARTING_S then
-        id, level, text = 'starting', 'info', 'BeamNG.Earth: looking for the world server (127.0.0.1:' .. tostring(info.port or 47613) .. ') ...'
+        id, level, text = 'starting', 'info', 'BeamNG.Earth: looking for the world server (' .. tostring(info.host or '127.0.0.1') .. ':' .. tostring(info.port or 47613) .. ') ...'
       else
         id, level = 'noserver', 'error'
-        text = 'World server not running. Start it with:  ' .. M.START_CMD
-          .. '   (it will start automatically in a later version)'
+        if info.remote then
+          text = 'The server\'s Earth service is unavailable. Waiting to reconnect ...'
+        else
+          text = 'World server not running. Start it with:  ' .. M.START_CMD
+            .. '   (it will start automatically in a later version)'
+        end
       end
     else
       id, level = 'lost', 'warn'

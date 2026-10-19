@@ -17,6 +17,7 @@ MPVehicleGE={handle=function(raw) vehicles[#vehicles+1]=raw end,onPlayerLeft=fun
 function AddEventHandler(name, fn) handlers[name]=fn end
 function RemoveEventHandler(name) handlers[name]=nil end
 function TriggerServerEvent(name, raw)
+  if name == 'EarthMPBootstrap' then return end
   T.check(name=='EarthMPHello' and not name:find(':'),'event name cannot contain the protocol delimiter')
   local msg=jsonDecode(raw)
   handlers['EarthMPSession'](jsonEncode({protocol=1,profile=msg.profile,accepted=true,session='test'}))
@@ -86,5 +87,10 @@ MPVehicleGE.handle('s:USER:Late:5-0:'..jsonEncode(sample(10)))
 T.check(mp.status().cachedVehicles==1,'spawn cached before local profile')
 state.mpProfile={id='profile'}; mp.update(state,3)
 T.check(mp.status().activeVehicles==1,'matching pre-hello spawn survives generator handshake')
+mp.reset()
+mp.prepareLevel()
+local before=#sent
+MPGameNetwork.send('Os:0:'..jsonEncode(sample(0)))
+T.check(#sent==before,'initial spawn captured during mission loading, before core level-start')
 mp.reset()
 T.done('multiplayer')

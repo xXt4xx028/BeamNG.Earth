@@ -2,6 +2,7 @@
 -- Spatial messages retain the sender's geographic frame until the receiving PC
 -- has terrain ready. Far vehicles are cached as data, rather than simulated.
 local space = require('beamngEarth/mpspace')
+local earthNet = require('beamngEarth/net')
 local M = {}
 local st, installed, accepted, profile, session
 local originals, wrappers = {}, {}
@@ -11,9 +12,14 @@ local errorText = 'Waiting for BeamMP session'
 local MAX_REMOTE, MAX_PENDING = 128, 64
 local stats = { sent = 0, received = 0, rejected = 0, culled = 0 }
 local savedQueue
+local preparing = false
 
 local function mpSession()
   return MPCoreNetwork and MPCoreNetwork.isMPSession and MPCoreNetwork.isMPSession()
+end
+
+local function enabled()
+  return (preparing or (st and st.inOurLevel)) and mpSession()
 end
 
 local function ready()
@@ -74,6 +80,12 @@ local function onSession(raw)
   errorText = accepted and 'Geographic sync active (experimental)' or tostring(msg.error or 'World profile rejected')
 end
 
+local function onEndpoint(raw)
+  if not (st and st.inOurLevel and mpSession()) then return end
+  local endpoint = decode(raw)
+  if endpoint then earthNet.configure(endpoint) end
+end
+
 function M.install()
   if installed then return true end
   if not (MPGameNetwork and positionGE and MPVehicleGE and AddEventHandler
@@ -84,7 +96,7 @@ function M.install()
   originals.correction = positionGE.setPositionRotationVelocity
   originals.playerLeft = MPVehicleGE.onPlayerLeft
   wrappers.send = function(packet)
-    if not (st and st.inOurLevel and mpSession()) then return originals.send(packet) end
+    if not enabled() then return originals.send(packet) end
     local raw = tostring(packet)
     local kind = raw:sub(1, 2)
     if kind == 'Os' and not ready() then
@@ -99,7 +111,7 @@ function M.install()
     end
   end
   wrappers.position = function(raw)
-    if not (st and st.inOurLevel and mpSession()) then return originals.position(raw) end
+    if not enabled() then return originals.position(raw) end
     local id, body = raw:match('^p:(%d+%-%d+):(%{.*%})$')
     if not id or own(id) then return end
     local data = decode(body)
@@ -110,7 +122,7 @@ function M.install()
     if r then r.pose, r.dirty = data, true; stats.received = stats.received + 1 end
   end
   wrappers.vehicle = function(raw)
-    if not (st and st.inOurLevel and mpSession()) then return originals.vehicle(raw) end
+    if not enabled() then return originals.vehicle(raw) end
     local kind = raw:sub(1, 1)
     if kind == 'd' then
       local id = raw:sub(3)
@@ -161,6 +173,7 @@ function M.install()
   positionGE.setPositionRotationVelocity = wrappers.correction
   MPVehicleGE.onPlayerLeft = wrappers.playerLeft
   AddEventHandler('EarthMPSession', onSession, 'beamngEarthMP')
+  AddEventHandler('EarthMPEndpoint', onEndpoint, 'beamngEarthMP')
   -- Queued native spawns contain local coordinates and must not survive a rebase.
   if settings and settings.getValue and settings.setValue then
     savedQueue = settings.getValue('enableSpawnQueue', true)
@@ -179,6 +192,8 @@ end
 
 function M.update(state, dt)
   st = state
+  if preparing and mpSession() and not st.inOurLevel then M.install(); return end
+  if st.inOurLevel then preparing = false end
   if not (st.inOurLevel and mpSession()) then
     if installed then M.reset() end
     return
@@ -195,9 +210,10 @@ function M.update(state, dt)
     end
   end
   timer = timer + (dt or 0)
-  if profile and timer >= 3 and TriggerServerEvent then
+  if timer >= 3 and TriggerServerEvent then
     timer = 0
-    TriggerServerEvent('EarthMPHello', jsonEncode({ protocol = space.PROTOCOL, profile = profile }))
+    TriggerServerEvent('EarthMPBootstrap', '{}')
+    if profile then TriggerServerEvent('EarthMPHello', jsonEncode({ protocol = space.PROTOCOL, profile = profile })) end
   end
   if not ready() then return end
   -- Refresh pending initial-spawn positions after the startup teleport.
@@ -254,10 +270,16 @@ function M.reset()
     if positionGE.setPositionRotationVelocity == wrappers.correction then positionGE.setPositionRotationVelocity = originals.correction end
     if MPVehicleGE.onPlayerLeft == wrappers.playerLeft then MPVehicleGE.onPlayerLeft = originals.playerLeft end
     if RemoveEventHandler then RemoveEventHandler('EarthMPSession', 'beamngEarthMP') end
+    if RemoveEventHandler then RemoveEventHandler('EarthMPEndpoint', 'beamngEarthMP') end
     if savedQueue ~= nil and settings and settings.setValue then settings.setValue('enableSpawnQueue', savedQueue) end
   end
   installed, accepted, profile, session = false, false, nil, nil
   remote, outgoing, timer, fence = {}, {}, 0, 0
+  preparing = false
+end
+
+function M.prepareLevel()
+  if mpSession() then preparing = true; M.install() end
 end
 
 function M.status()

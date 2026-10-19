@@ -199,7 +199,7 @@ end
 -- ((0,0) for a teleport, snap256(predicted) for a rebase; V1_1_SPEC 3).
 local function requestAnchor(lat, lon, purpose, cx, cy)
   if not net.isConnected() then
-    setStatus('Companion server not connected (127.0.0.1:' .. net.PORT .. ')')
+    setStatus('World server not connected (' .. net.HOST .. ':' .. net.PORT .. ')')
     return false
   end
   local id = nextId()
@@ -1008,6 +1008,7 @@ end
 
 local function updateBanner(dt)
   local i = bannerInfo
+  i.host, i.port, i.remote = net.HOST, net.PORT, net.isRemote()
   i.net, i.session = net.state(), st.sessionId ~= nil
   i.everConnected, i.attempts = net.everConnected(), net.attempts()
   i.note, i.noteDetail = st.serverNote, st.serverNoteDetail
@@ -1322,6 +1323,7 @@ function M.hudApp(name, on) return hudapps.setMounted(name, on) end
 -- onClientStartMission): the player's traffic choice, for our level only.
 local function onClientPreStartMission(levelPath)
   if type(levelPath) == 'string' and levelPath:find('/' .. LEVEL_ID .. '/', 1, true) then
+    multiplayer.prepareLevel() -- capture BeamMP's initial spawn before the mission-ready callbacks
     navgraph.takeChoice(rawget(_G, 'freeroam_freeroam') and freeroam_freeroam.spawningOptionsHelper)
   end
 end
@@ -1342,6 +1344,9 @@ local function onClientEndMission()
   trees.reset()
   parking.reset()
   navgraph.reset()
+  if net.isRemote() then net.send({ type = 'asset_reset' }) end
+  net.clearRemoteAssets()
+  net.useLocal()
   local sessionId, nextRequestId, mapPort = st.sessionId, st.nextRequestId, st.mapPort
   resetState()
   st.sessionId, st.nextRequestId, st.mapPort = sessionId, nextRequestId, mapPort   -- the connection's (hello)
@@ -1361,6 +1366,7 @@ local function onExtensionUnloaded()
   sea.clear()
   trees.clear()
   terrain.delete()
+  net.clearRemoteAssets()
   -- M1h: the level stays loaded; give it back its sky and view distance
   horizon.restoreSky()
   if st.visibleDistance and horizon.setVisibleDistance(VISIBLE_DISTANCE) then st.visibleDistance = nil end
@@ -1526,11 +1532,13 @@ function M.updateInfo() return updateInfo end
 function M.cacheState() return cacheInfo end
 local function cacheReady() return net.isConnected() and st.sessionId ~= nil end
 function M.cacheSetCap(gb)
+  if net.isRemote() then return false end
   if not cacheReady() then return false end
   net.send({ type = 'cache', capGb = gb })
   return true
 end
 function M.cacheClear()
+  if net.isRemote() then return false end
   if not cacheReady() then return false, 'server not connected' end
   -- a server without a cache sends no 'cache' after hello and would never answer the clear
   if not cacheInfo then return false, 'the server has no download cache' end

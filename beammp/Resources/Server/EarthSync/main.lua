@@ -3,8 +3,11 @@
 local PROTOCOL = 1
 local peers = {}
 local profile -- optional pin from EarthSync.json; otherwise locked by first accepted client
+local worldServer
+local maxPlayers = 8
 local session = tostring(os.time()) .. '-' .. tostring(math.random(100000, 999999))
 local configPath = 'Resources/Server/EarthSync/EarthSync.json'
+local runtimePath = 'Resources/Server/EarthSync/EarthSync.runtime.json'
 
 local function readJson(raw, limit)
   if type(raw) ~= 'string' or #raw > (limit or 8192) then return nil end
@@ -20,16 +23,33 @@ local function finite(n)
   return type(n) == 'number' and n == n and math.abs(n) < math.huge
 end
 
-function EarthSync_init()
-  local f = io.open(configPath, 'r')
+local function loadConfig()
+  local f = io.open(runtimePath, 'r') or io.open(configPath, 'r')
   if f then
     local c = readJson(f:read('*a')); f:close()
-    if c and hash(c.profile) then profile = c.profile end
+    if c then
+      if hash(c.profile) then profile = c.profile end
+      worldServer = type(c.worldServer) == 'table' and c.worldServer or nil
+      maxPlayers = math.max(1,math.min(8,tonumber(c.maxPlayers) or 8))
+    end
   end
+end
+
+function EarthSync_init()
+  loadConfig()
+  if MP.Set and MP.Settings and MP.Settings.MaxPlayers then MP.Set(MP.Settings.MaxPlayers,maxPlayers) end
   print('[EarthSync] Experimental geographic sync, protocol ' .. PROTOCOL)
 end
 
+function EarthSync_bootstrap(playerId)
+  loadConfig() -- permits the world service to start after BeamMP
+  if worldServer then
+    MP.TriggerClientEvent(playerId,'EarthMPEndpoint',Util.JsonEncode(worldServer))
+  end
+end
+
 function EarthSync_hello(playerId, raw)
+  loadConfig()
   local msg = readJson(raw)
   if not msg then return end
   local ok = msg.protocol == PROTOCOL and hash(msg.profile)
@@ -69,5 +89,6 @@ end
 
 MP.RegisterEvent('onInit', 'EarthSync_init')
 MP.RegisterEvent('EarthMPHello', 'EarthSync_hello')
+MP.RegisterEvent('EarthMPBootstrap', 'EarthSync_bootstrap')
 MP.RegisterEvent('onPlayerDisconnect', 'EarthSync_left')
 MP.RegisterEvent('onVehicleSpawn', 'EarthSync_spawn')

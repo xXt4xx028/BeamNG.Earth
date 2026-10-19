@@ -84,6 +84,9 @@ class BridgeTest(unittest.TestCase):
 
         def trigger(name, raw):
             event, payload = (name + ':' + raw).split(':', 1)
+            if event == 'EarthMPBootstrap':
+                self.server.globals().EarthSync_bootstrap(player)
+                return
             self.assertEqual(event, 'EarthMPHello')
             self.server.globals().EarthSync_hello(player, payload)
 

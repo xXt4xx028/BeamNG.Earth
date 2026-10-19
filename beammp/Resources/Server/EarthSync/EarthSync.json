@@ -1,3 +1,5 @@
 {
-  "profile": null
+  "profile": null,
+  "maxPlayers": 8,
+  "cacheGB": 40
 }
