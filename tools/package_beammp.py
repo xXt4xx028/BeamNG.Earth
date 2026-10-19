@@ -28,7 +28,7 @@ def build(out, bridge_exe=None):
         shutil.copy2(path, plugin / path.name)
     shutil.copy2(ROOT / 'docs' / 'BEAMMP-CENTRAL.md', out / 'README-BEAMMP.md')
     docs = ['BEAMMP-CENTRAL.md','BEAMMP-CLIENT-BRIDGE.md','BEAMMP-REGIONAL.md','BEAMMP-TRANSPORT-REVIEW.md']
-    for name in docs[1:]:
+    for name in docs[1:] + ['BEAMMP.md','BEAMMP-CENTRAL.md']:
         shutil.copy2(ROOT/'docs'/name,out/name)
     coverage='2026-10-18-mexico-patagonia-coverage.json'
     (out/'research').mkdir(parents=True,exist_ok=True)
