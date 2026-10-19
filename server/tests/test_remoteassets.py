@@ -51,6 +51,14 @@ class RemoteAssetsTest(unittest.IsolatedAsyncioTestCase):
             writer.frames=[]
             await sender.deliver(msg)
             self.assertTrue(any(m['type']=='asset_begin' and m['path'].endswith('.cdae') for m in writer.frames))
+            shape='/temp/beamngEarth/s/shape.cdae'
+            current=sender.sent[shape]
+            writer.frames=[]
+            await sender.deliver({'type':'asset_delete','path':shape,'digest':'outdated'})
+            self.assertEqual(writer.frames,[],'stale deletion cannot delete reused geometry')
+            await sender.deliver({'type':'asset_delete','path':shape,'digest':current})
+            self.assertNotIn(shape,sender.sent)
+            self.assertEqual(writer.frames[-1]['type'],'asset_delete')
 
     async def test_no_arbitrary_file_access(self):
         with tempfile.TemporaryDirectory() as user:

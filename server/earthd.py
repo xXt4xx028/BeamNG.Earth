@@ -777,13 +777,33 @@ class Server:
                 log.info("anchor %d height quantum 1/%d m", anchor.id, round(1 / anchor.q))
             return anchor.q
 
-    @staticmethod
-    def _remove(path):
+    def _remove(self,path):
         for p in (path, path + ".tmp"):
             try:
                 os.remove(p)
             except OSError:
                 pass
+            else:
+                if p == path and getattr(self,'remote_assets',False):
+                    self.notify_asset_removed(path)
+
+    def notify_asset_removed(self,path):
+        from pathlib import Path
+        try:
+            vfs = '/' + Path(path).resolve().relative_to(Path(self.user_dir).resolve()).as_posix()
+        except ValueError:
+            return
+        if not vfs.startswith(remoteassets.PREFIX):
+            return
+        for connection in list(self.connections):
+            sender = getattr(connection,'asset_sender',None)
+            digest = sender.sent.get(vfs) if sender else None
+            if digest:
+                try:
+                    connection.loop.call_soon_threadsafe(connection.send,
+                        {'type':'asset_delete','path':vfs,'digest':digest})
+                except RuntimeError:
+                    pass # client loop has already stopped
 
     def delete_gap(self):
         """Seconds until the next queued delete: delete_interval, or shorter for a long queue
@@ -1354,11 +1374,12 @@ class Server:
         last two committed ones, the last two handed to the mod, or `fresh` (the terrain
         just built: a request about to be answered, or the prefetch the mod asks for next)."""
         keep = set(self.hm_committed) | set(self.hm_sent)
-        for connection in self.connections:
-            keep.update(getattr(connection,'protected_terrain',()))
-            block = getattr(connection,'block',None)
-            if connection.active is not None and block is not None:
-                keep.add((connection.active,block.cx,block.cy))
+        if getattr(self,'remote_assets',False):
+            for connection in self.connections:
+                keep.update(getattr(connection,'protected_terrain',()))
+                block = getattr(connection,'block',None)
+                if connection.active is not None and block is not None:
+                    keep.add((connection.active,block.cx,block.cy))
         if fresh is not None:
             keep.add(fresh)
         # The first terrain of an anchor no connection has committed yet: anchor_ready
@@ -2261,7 +2282,11 @@ class Connection:
             if first is not None:
                 self.dispatch(first)
             while True:
-                msg = await protocol.read_message(self.reader)
+                if getattr(self.s,'remote_assets',False):
+                    msg = await asyncio.wait_for(protocol.read_message(self.reader),
+                                                 getattr(self.s,'remote_idle_timeout',30))
+                else:
+                    msg = await protocol.read_message(self.reader)
                 if msg is None:
                     break
                 try:
@@ -2271,7 +2296,7 @@ class Connection:
                 except Exception:
                     log.exception("client %s: message %r failed", self.peer, msg.get("type"))
                 await self.writer.drain()
-        except (protocol.ProtocolError, ConnectionError) as e:
+        except (protocol.ProtocolError, ConnectionError, asyncio.TimeoutError) as e:
             log.warning("client %s: %s", self.peer, e)
         finally:
             self.s.connections.discard(self)
@@ -2299,6 +2324,8 @@ class Connection:
 
     def dispatch(self, msg):
         kind = msg["type"]
+        if kind == 'keepalive':
+            return
         if kind == 'asset_reset' and self.asset_sender:
             self.asset_sender.sent.clear()
             return

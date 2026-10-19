@@ -90,6 +90,13 @@ class CentralServerTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await asyncio.wait_for(r.read(),3),b'')
         self.assertEqual(len(self.world.connections),0)
 
+    async def test_dead_connection_releases_its_slot(self):
+        self.world.remote_idle_timeout=.2
+        r,w=await self.connect()
+        await self.until(r,'hello')
+        await asyncio.wait_for(r.read(),3)
+        self.assertEqual(len(self.world.connections),0)
+
     async def test_generated_terrain_arrives_before_ready_at_two_independent_places(self):
         for lat,lon in [(19.4326,-99.1332),(40.7128,-74.0060)]:
             r,w=await self.connect()
@@ -125,3 +132,17 @@ class CentralServerTest(unittest.IsolatedAsyncioTestCase):
         self.world.prune(9)
         self.assertNotIn(1,self.world.anchors)
         self.assertEqual(set(self.world.anchors),set(range(2,9)))
+
+    async def test_host_release_is_forwarded_to_the_clients_temporary_files(self):
+        r,w=await self.connect()
+        await self.until(r,'hello')
+        path=Path(self.tmp.name)/'temp'/'beamngEarth'/'test-release.cdae'
+        path.write_bytes(b'generated geometry')
+        connection=next(iter(self.world.connections))
+        connection.send({'type':'probe','path':'/temp/beamngEarth/test-release.cdae'})
+        _,files=await self.until(r,'probe')
+        self.assertEqual(files['/temp/beamngEarth/test-release.cdae'],b'generated geometry')
+        self.world._remove(str(path))
+        released,_=await self.until(r,'asset_delete')
+        self.assertEqual(released['path'],'/temp/beamngEarth/test-release.cdae')
+        self.assertFalse(path.exists())

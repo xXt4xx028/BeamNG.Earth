@@ -43,10 +43,11 @@ function M.receive(msg)
   if type(msg.type) ~= 'string' or msg.type:sub(1,6) ~= 'asset_' then return false end
   if not M.validPath(msg.path) then return nil, 'invalid asset path' end
   if msg.type == 'asset_begin' then
-    if pending or type(msg.bytes) ~= 'number' or msg.bytes < 0 or msg.bytes > MAX_FILE or msg.bytes % 1 ~= 0 then
+    if pending or type(msg.bytes) ~= 'number' or msg.bytes < 0 or msg.bytes > MAX_FILE or msg.bytes % 1 ~= 0
+      or type(msg.digest) ~= 'string' or #msg.digest ~= 64 or msg.digest:find('[^0-9a-f]') then
       return nil, 'invalid asset size/order'
     end
-    pending = {path=msg.path, bytes=msg.bytes, have=0, chunks={}}
+    pending = {path=msg.path, bytes=msg.bytes, have=0, chunks={}, digest=msg.digest}
   elseif msg.type == 'asset_chunk' then
     if not pending or pending.path ~= msg.path or msg.offset ~= pending.have then return nil, 'out-of-order asset' end
     if type(msg.data) ~= 'string' or #msg.data > 65536 then return nil, 'asset chunk too large' end
@@ -63,7 +64,12 @@ function M.receive(msg)
     if not ok or err == false then return nil, 'cannot write generated asset' end
     -- Refuse to expose a control message unless the complete bytes reached VFS.
     if readFile(msg.path) ~= body then return nil, 'generated asset write verification failed' end
-    owned[msg.path], pending = true, nil
+    owned[msg.path], pending = pending.digest, nil
+  elseif msg.type == 'asset_delete' then
+    if owned[msg.path] and owned[msg.path] == msg.digest then
+      local ok,result=pcall(FS.removeFile,FS,msg.path)
+      if ok and result ~= false then owned[msg.path]=nil end
+    end
   else return nil, 'unknown asset message' end
   return true
 end

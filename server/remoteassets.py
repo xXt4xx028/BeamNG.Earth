@@ -111,6 +111,12 @@ class Sender:
         await self.writer.drain()
 
     async def deliver(self, message):
+        if message.get('type') == 'asset_delete':
+            # A pooled filename may have been reused after deletion was queued.
+            if self.sent.get(message['path']) == message.get('digest'):
+                self.sent.pop(message['path'],None)
+                await self.emit(message)
+            return
         files = await asyncio.to_thread(assets, self.user_dir, message)
         for path, body in files.items():
             digest = hashlib.sha256(body).hexdigest()

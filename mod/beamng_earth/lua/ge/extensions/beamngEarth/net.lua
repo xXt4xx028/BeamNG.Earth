@@ -12,6 +12,7 @@ local M = {}
 
 M.HOST, M.PORT = '127.0.0.1', 47613
 local remoteToken = nil
+local heartbeat, remoteHello = 0, false
 local RECONNECT_S = 2.0
 local CONNECT_TIMEOUT_S = 2.0
 local RECV_CHUNK = 65536
@@ -31,6 +32,7 @@ local everConnected = false
 M.lastError = nil
 
 local function closeSocket(err)
+  heartbeat, remoteHello = 0, false
   if sock then pcall(sock.close, sock) end
   local wasConnected = state == 'connected'
   sock, state, timer = nil, 'disconnected', 0
@@ -139,6 +141,10 @@ function M.update(dt)
   local out = events
   events = {}
   if state == 'connected' then
+    if remoteToken and remoteHello then
+      heartbeat = heartbeat + dt
+      if heartbeat >= 10 then heartbeat=0; M.send({type='keepalive'}) end
+    end
     flush()
     if sock then receive(out) end
   end
@@ -152,6 +158,7 @@ function M.send(msg)
   if state ~= 'connected' then return false end
   if remoteToken and msg.type == 'hello' then
     msg.remoteAuth, msg.remoteAssets = remoteToken, 1
+    remoteHello = true
   end
   outQueue[#outQueue + 1] = framing.encode(jsonEncode(msg))
   flush()

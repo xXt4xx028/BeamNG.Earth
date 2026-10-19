@@ -24,6 +24,7 @@ jobs:
       - run: python -m unittest discover -s server/tests -p test_remoteassets.py
       - run: python -m unittest discover -s server/tests -p test_centralserver.py
       - run: python -m unittest discover -s server/tests -p test_centralstartup.py
+      - run: python -m unittest discover -s server/tests -p test_server.py -k test_heightmap_cleanup_and_errors
       - run: python -m unittest discover -s server/tests -p test_geodesy.py
       - run: python -m unittest discover -s server/tests -p test_protocol.py
       - run: python -m unittest discover -s server/tests -p test_protocol_agreement.py

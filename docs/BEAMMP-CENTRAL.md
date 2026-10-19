@@ -26,11 +26,13 @@ on the host; the Lua resource announces the Earth endpoint to joining players.
   of recently used data means 40 GB is an **eviction target, not a hard disk quota**.
 - Generated host files under `EarthWorld/runtime` are additional. Player-side
   received files under `temp/beamngEarth` are also additional; the mod removes its
-  received files when leaving the level. Host runtime sessions have their normal
+  received files when the host releases them and when leaving the level. Host runtime sessions have their normal
   cleanup rules. Reserve disk space beyond the 40 GB source cache.
 - Both the BeamMP resource and the world service default to **8**. The service
   rejects a ninth connection, including attempts during authentication. A player
   cannot change the shared cache cap or clear it from their settings page.
+  Idle connections without keepalives are removed after 30 seconds so a vanished
+  connection cannot hold one of the eight slots indefinitely.
 - Eight simultaneous independent destinations require substantially more world
   generation than eight players driving together. The earlier per-PC CPU
   estimate does not apply to this centralized design. Real eight-player CPU,
