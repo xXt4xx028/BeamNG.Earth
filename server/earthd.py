@@ -2275,7 +2275,7 @@ class Connection:
                 return
             self.asset_sender = remoteassets.Sender(self.writer, self.s.user_dir,
                 store=getattr(self.s,'asset_store',None),global_pacer=getattr(self.s,'upload_pacer',None),
-                client_rate=getattr(self.s,'client_upload_rate',0))
+                client_rate=getattr(self.s,'client_upload_rate',0),binary=first.get('remoteAssetBinary') == 1)
             self.asset_sender.start()
         log.info("client connected %s", self.peer)
         self.s.connections.add(self)

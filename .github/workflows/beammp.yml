@@ -22,6 +22,7 @@ jobs:
       - run: python -m unittest discover -s server/tests -p test_mpprofile.py
       - run: python -m unittest discover -s server/tests -p test_mpbridge.py
       - run: python -m unittest discover -s server/tests -p test_remoteassets.py
+      - run: python -m unittest discover -s server/tests -p test_binaryassets.py
       - run: pip install rasterio cryptography
       - run: python -m unittest discover -s server/tests -p test_localdem.py
       - run: python -m unittest discover -s server/tests -p test_clientbridge.py

@@ -2,6 +2,7 @@
 local M = {}
 local PREFIX = '/temp/beamngEarth/'
 local MAX_FILE = 32 * 1024 * 1024
+local BINARY_PREFIX = '\0EAR1'
 local pending = nil -- ordered transport: at most one file is assembled at a time
 local owned = {}
 local alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
@@ -47,9 +48,10 @@ function M.receive(msg)
       or type(msg.digest) ~= 'string' or #msg.digest ~= 64 or msg.digest:find('[^0-9a-f]') then
       return nil, 'invalid asset size/order'
     end
-    pending = {path=msg.path, bytes=msg.bytes, have=0, chunks={}, digest=msg.digest}
+    if msg.encoding ~= nil and msg.encoding ~= 'binary' then return nil, 'unknown asset encoding' end
+    pending = {path=msg.path, bytes=msg.bytes, have=0, chunks={}, digest=msg.digest, encoding=msg.encoding}
   elseif msg.type == 'asset_chunk' then
-    if not pending or pending.path ~= msg.path or msg.offset ~= pending.have then return nil, 'out-of-order asset' end
+    if not pending or pending.encoding == 'binary' or pending.path ~= msg.path or msg.offset ~= pending.have then return nil, 'out-of-order asset' end
     if type(msg.data) ~= 'string' or #msg.data > 65536 then return nil, 'asset chunk too large' end
     local bytes = M.decode64(msg.data)
     if not bytes or pending.have+#bytes > pending.bytes then return nil, 'invalid asset chunk' end
@@ -71,6 +73,20 @@ function M.receive(msg)
       if ok and result ~= false then owned[msg.path]=nil end
     end
   else return nil, 'unknown asset message' end
+  return true
+end
+
+function M.receiveBinary(payload)
+  if type(payload) ~= 'string' or payload:sub(1,5) ~= BINARY_PREFIX or #payload <= 9 or #payload > 9+49152 then
+    return nil, 'invalid binary asset frame'
+  end
+  if not pending or pending.encoding ~= 'binary' then return nil, 'unexpected binary asset' end
+  local a,b,c,d = payload:byte(6,9)
+  local offset = a+b*256+c*65536+d*16777216
+  local bytes = payload:sub(10)
+  if offset ~= pending.have or pending.have+#bytes > pending.bytes then return nil, 'out-of-order binary asset' end
+  pending.have = pending.have+#bytes
+  pending.chunks[#pending.chunks+1] = bytes
   return true
 end
 

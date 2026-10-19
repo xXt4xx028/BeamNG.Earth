@@ -11,6 +11,7 @@ sys.path.insert(0,str(Path(__file__).resolve().parent))
 import cache
 import earthd
 import protocol
+import remoteassets
 from test_server import FakeDem
 
 
@@ -43,11 +44,12 @@ class CentralServerTest(unittest.IsolatedAsyncioTestCase):
         self.disk.close()
         self.tmp.cleanup()
 
-    async def connect(self,token=None):
+    async def connect(self,token=None,binary=False):
         r,w=await asyncio.open_connection('127.0.0.1',self.port)
         self.clients.append((r,w))
         w.write(protocol.encode({'type':'hello','protocol':4,'format':4,'remoteAssets':1,
-                                 'remoteAuth':self.world.remote_token if token is None else token}))
+                                 'remoteAuth':self.world.remote_token if token is None else token,
+                                 'remoteAssetBinary':1 if binary else 0}))
         await w.drain()
         return r,w
 
@@ -83,6 +85,34 @@ class CentralServerTest(unittest.IsolatedAsyncioTestCase):
         await self.clients[0][1].drain()
         await self.until(self.clients[0][0],'cache')
         self.assertEqual(self.disk.cap,40*10**9)
+
+    async def test_binary_and_legacy_clients_receive_identical_generated_terrain(self):
+        for binary in (True,False):
+            reader,writer=await self.connect(binary=binary)
+            await self.until(reader,'hello')
+            writer.write(protocol.encode({'type':'prepare_anchor','requestId':1,'lat':19.4326,'lon':-99.1332,'cx':0,'cy':0}))
+            await writer.drain()
+            pending=None; files={}; binary_chunks=0
+            while True:
+                header=await asyncio.wait_for(reader.readexactly(4),15)
+                payload=await reader.readexactly(protocol.HEADER.unpack(header)[0])
+                if payload.startswith(remoteassets.BINARY_PREFIX):
+                    self.assertTrue(binary)
+                    self.assertIsNotNone(pending)
+                    self.assertEqual(remoteassets.BINARY_HEADER.unpack(payload[5:9])[0],len(pending[1]))
+                    pending[1].extend(payload[9:]); binary_chunks+=1
+                    continue
+                message=protocol.decode_payload(payload)
+                if message['type']=='asset_begin': pending=(message['path'],bytearray())
+                elif message['type']=='asset_chunk': pending[1].extend(base64.b64decode(message['data']))
+                elif message['type']=='asset_end':
+                    files[pending[0]]=bytes(pending[1]); pending=None
+                elif message['type']=='anchor_ready':
+                    self.assertIsNone(pending)
+                    height=message['terrain']['heightmap']
+                    self.assertEqual(files[height],(Path(self.tmp.name)/height.lstrip('/')).read_bytes())
+                    self.assertEqual(binary_chunks>0,binary)
+                    break
 
     async def test_auth_failure_does_not_consume_slot(self):
         for token in ['wrong','\u00f1'*64]:

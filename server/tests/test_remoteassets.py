@@ -20,6 +20,34 @@ class Writer:
 
 
 class RemoteAssetsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_negotiated_binary_stream_is_exact_and_smaller(self):
+        class RawWriter:
+            def __init__(self): self.frames=[]
+            def write(self,data): self.frames.append(data)
+            async def drain(self): pass
+        with tempfile.TemporaryDirectory() as user:
+            path=Path(user)/'temp/beamngEarth/shared/terrain.ter'
+            path.parent.mkdir(parents=True)
+            body=bytes(range(256))*4096
+            path.write_bytes(body)
+            message={'type':'terrain_ready','ter':'/temp/beamngEarth/shared/terrain.ter'}
+            raw=RawWriter(); binary=remoteassets.Sender(raw,user,binary=True)
+            old=RawWriter(); legacy=remoteassets.Sender(old,user)
+            await binary.deliver(message); await legacy.deliver(message)
+            assembled=bytearray()
+            self.assertEqual(protocol.decode_payload(raw.frames[0][4:])['encoding'],'binary')
+            for frame in raw.frames[1:-2]:
+                payload=frame[4:]
+                self.assertEqual(protocol.HEADER.unpack(frame[:4])[0],len(payload))
+                self.assertTrue(payload.startswith(remoteassets.BINARY_PREFIX))
+                self.assertEqual(remoteassets.BINARY_HEADER.unpack(payload[5:9])[0],len(assembled))
+                assembled.extend(payload[9:])
+            self.assertEqual(assembled,body)
+            self.assertEqual(protocol.decode_payload(raw.frames[-1][4:]),message)
+            self.assertLess(binary.wire_bytes,legacy.wire_bytes*.76)
+            for offset,chunk in [(-1,b'x'),(0,b''),(0,b'x'*(remoteassets.CHUNK+1))]:
+                with self.assertRaises(ValueError): remoteassets.binary_frame(offset,chunk)
+
     async def test_eight_senders_share_one_read_and_detect_reused_slot(self):
         with tempfile.TemporaryDirectory() as user:
             path=Path(user)/'temp/beamngEarth/shared/shape.cdae'

@@ -1,6 +1,6 @@
 # Central Earth host: shared 40 GB cache, up to 8 players
 
-Alpha.3 keeps world generation on the host. Each player installs the normal
+Alpha.4 keeps world generation on the host. Each player installs the normal
 BeamMP-distributed client mod and receives generated terrain, geometry and
 textures over a separate authenticated Earth connection. **Players do not run
 Python in this mode.** They still render the world and run vehicle physics in
@@ -60,10 +60,11 @@ on the host; the Lua resource announces the Earth endpoint to joining players.
   computation for unchanged files used by multiple players. It checks file
   identity/size/timestamps to detect pooled filenames being reused. It does not
   merge separately generated geometry or eliminate each player's download.
-- Base64 file framing adds roughly one third to binary transfer size, plus small
-  JSON overhead. Files are sent once per connection/content hash and resent if a
-  pooled file changes. There is no claim that this transport is optimized for
-  fast driving with eight players yet.
+- Alpha.4 negotiates raw binary file chunks, avoiding base64 and JSON encoding
+  for those bytes. Legacy clients without that capability keep the base64 path.
+  Files are sent once per connection/content hash and resent if a pooled file
+  changes. See the [scoped benchmark and limits](BEAMMP-PERFORMANCE.md);
+  sustained fast driving with eight real players is still unmeasured.
 
 ## Build and install on a dedicated test server
 
@@ -157,5 +158,8 @@ Alpha.3 adds tests for real TLS through the bridge into the headless generator,
 binary transfer, rejecting an untrusted certificate, shared eight-sender file
 reuse, upload pacing, regional raster reprojection and local DEM fallback.
 
-Code is in branch `beammp/earth-sync`; use alpha.3 packages for these additions.
+Code is in branch `beammp/earth-sync`; use alpha.4 packages for these additions,
+binary chunks, cursor-based framing and a soft 3 ms
+receive budget. The alpha.3 client bridge executable remains compatible because
+it forwards the stream without parsing it.
 The older [distributed setup](BEAMMP.md) remains available for comparison.

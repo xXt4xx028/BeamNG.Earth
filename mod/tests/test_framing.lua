@@ -111,4 +111,13 @@ do
   T.check(r:pop() == 'ok' and r.err == nil, 'reset recovers')
 end
 
+do
+  local r=framing.newReassembler()
+  local a,b,c=framing.encode('first'),framing.encode('second'),framing.encode('third')
+  r:feed(a..b..c:sub(1,6))
+  T.check(r:pop()=='first' and r:buffered()==#b+6,'unread byte count excludes consumed prefix')
+  T.check(r:pop()=='second' and not r:pop(),'partial frame behind consumed prefix waits')
+  r:feed(c:sub(7))
+  T.check(r:pop()=='third' and r:buffered()==0 and r.buf=='','append compacts safely and releases drained buffer')
+end
 T.done('test_framing')

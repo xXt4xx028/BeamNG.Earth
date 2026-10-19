@@ -7,10 +7,13 @@
 
 local framing = require('beamngEarth/framing')
 local assets = require('beamngEarth/assets')
+local stopwatch = require('beamngEarth/stopwatch')
+local receiveClock = nil
 
 local M = {}
 
 M.HOST, M.PORT = '127.0.0.1', 47613
+M.RECEIVE_BUDGET_MS = 3 -- soft budget: one file finalization can exceed it
 local remoteToken = nil
 local heartbeat, remoteHello = 0, false
 local RECONNECT_S = 2.0
@@ -23,6 +26,7 @@ local sock = nil
 local state = 'disconnected' -- 'disconnected' | 'connecting' | 'connected'
 local timer = RECONNECT_S    -- first attempt happens on the first update
 local rx = framing.newReassembler()
+local receiveClosed = nil -- drain complete buffered frames before reporting EOF
 local outQueue = {}          -- encoded frames waiting to be sent
 local outPos = 1             -- next byte of outQueue[1] to send
 local events = {}
@@ -37,6 +41,7 @@ local function closeSocket(err)
   local wasConnected = state == 'connected'
   sock, state, timer = nil, 'disconnected', 0
   rx:reset()
+  receiveClosed = nil
   assets.reset()
   outQueue, outPos = {}, 1
   M.lastError = err
@@ -99,8 +104,11 @@ local function flush()
 end
 
 local function receive(out)
+  receiveClock = receiveClock or stopwatch.clock()
+  local started = receiveClock()
   local closeErr = nil
-  for _ = 1, (#rx.buf + rx.pending < 4*1024*1024 and MAX_RECV_PER_FRAME or 0) do
+  for i = 1, (not receiveClosed and rx:buffered() < 4*1024*1024 and MAX_RECV_PER_FRAME or 0) do
+    if i > 1 and receiveClock()-started >= M.RECEIVE_BUDGET_MS then break end
     local data, err, partial = sock:receive(RECV_CHUNK)
     rx:feed(data or partial)
     -- 'timeout' = drained for this frame. Anything else ('closed', 'connection reset by
@@ -108,23 +116,32 @@ local function receive(out)
     if err and err ~= 'timeout' then closeErr = err; break end
     if not data then break end
   end
+  receiveClosed = receiveClosed or closeErr
   -- decode before closing: closeSocket() resets the reassembler, and the server's last
   -- frames (e.g. an anchor_error) may have arrived together with the close
-  for _ = 1, 16 do
+  local incomplete = false
+  for i = 1, 16 do
+    if i > 1 and receiveClock()-started >= M.RECEIVE_BUDGET_MS then break end
     local payload = rx:pop()
-    if not payload then break end
-    local msg = jsonDecode(payload, 'beamngEarth/net')
-    if type(msg) == 'table' then
-      local handled, err = false, nil
-      if remoteToken then handled, err = assets.receive(msg) end
-      if err then closeSocket(err); return end
-      if not handled then out[#out + 1] = msg end
+    if not payload then incomplete = true; break end
+    if payload:byte(1) == 0 then
+      if not remoteToken then closeSocket('binary asset outside remote mode'); return end
+      local handled, err = assets.receiveBinary(payload)
+      if not handled then closeSocket(err); return end
+    else
+      local msg = jsonDecode(payload, 'beamngEarth/net')
+      if type(msg) == 'table' then
+        local handled, err = false, nil
+        if remoteToken then handled, err = assets.receive(msg) end
+        if err then closeSocket(err); return end
+        if not handled then out[#out + 1] = msg end
+      end
     end
   end
   if rx.err then
     closeSocket(rx.err)
-  elseif closeErr then
-    closeSocket(closeErr == 'closed' and 'closed by server' or ('receive: ' .. tostring(closeErr)))
+  elseif receiveClosed and (rx:buffered() == 0 or incomplete) then
+    closeSocket(receiveClosed == 'closed' and 'closed by server' or ('receive: ' .. tostring(receiveClosed)))
   end
 end
 
@@ -141,11 +158,11 @@ function M.update(dt)
   local out = events
   events = {}
   if state == 'connected' then
-    if remoteToken and remoteHello then
+    if not receiveClosed and remoteToken and remoteHello then
       heartbeat = heartbeat + dt
       if heartbeat >= 10 then heartbeat=0; M.send({type='keepalive'}) end
     end
-    flush()
+    if not receiveClosed then flush() end
     if sock then receive(out) end
   end
   for _, e in ipairs(events) do out[#out + 1] = e end
@@ -155,9 +172,9 @@ end
 
 -- Queue a message table; returns false when not connected (the message is dropped).
 function M.send(msg)
-  if state ~= 'connected' then return false end
+  if state ~= 'connected' or receiveClosed then return false end
   if remoteToken and msg.type == 'hello' then
-    msg.remoteAuth, msg.remoteAssets = remoteToken, 1
+    msg.remoteAuth, msg.remoteAssets, msg.remoteAssetBinary = remoteToken, 1, 1
     remoteHello = true
   end
   outQueue[#outQueue + 1] = framing.encode(jsonEncode(msg))

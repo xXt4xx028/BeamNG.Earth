@@ -5,10 +5,11 @@
 > It has automated tests but has **not been validated in a live two-client session**.
 > Use the companion from this fork; upstream binaries do not contain the integration.
 
-> **Central host mode (alpha.3):** [one shared 40 GB cache, up to 8 players](docs/BEAMMP-CENTRAL.md).
+> **Central host mode (alpha.4):** [one shared 40 GB cache, up to 8 players](docs/BEAMMP-CENTRAL.md).
 > The host generates and streams assets; players receive them through the mod without running Python.
 > For Internet asset streaming, explicitly start the [separate TLS client bridge](docs/BEAMMP-CLIENT-BRIDGE.md).
 > See [Mexico/Patagonia data and regional elevation imports](docs/BEAMMP-REGIONAL.md). No live multiplayer validation yet.
+> Alpha.4 adds negotiated binary asset chunks and cheaper, frame-budgeted reception. [Measured scope/results](docs/BEAMMP-PERFORMANCE.md).
 
 A 1:1 scale, streamed Earth for [BeamNG.drive](https://www.beamng.com/): drive anywhere on the
 planet on real elevation data and satellite imagery, with distance-based level of detail and the

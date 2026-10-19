@@ -1,0 +1,41 @@
+{
+  "scope": "Synthetic serialization and LuaJIT framing only; excludes TLS, bandwidth caps, VFS, generation and game FPS.",
+  "environment": {
+    "platform": "Windows-11-10.0.26300-SP0",
+    "python": "3.14.6 (tags/v3.14.6:c63aec6, Jun 10 2026, 10:26:10) [MSC v.1944 64 bit (AMD64)]",
+    "repeats": 5,
+    "assetBytes": 4194304,
+    "seed": 731,
+    "cache": "warm"
+  },
+  "transfer": {
+    "base64": {
+      "wallSeconds": 0.2089403999998467,
+      "wireBytes": 44811744,
+      "players": 8
+    },
+    "binary": {
+      "wallSeconds": 0.00887709999915387,
+      "wireBytes": 33566064,
+      "players": 8
+    }
+  },
+  "baselineCommit": "54bae46efd9b19a320ead9a758a9fedbdef03922",
+  "framing": {
+    "before": {
+      "medianSeconds": 0.4328431999983877,
+      "iterations": 20,
+      "bytesPerIteration": 3145728
+    },
+    "after": {
+      "medianSeconds": 0.01983509999990929,
+      "iterations": 20,
+      "bytesPerIteration": 3145728
+    }
+  },
+  "reductions": {
+    "wirePercent": 25.095385709603267,
+    "senderTimePercent": 95.75137216203262,
+    "framingTimePercent": 95.41748605500024
+  }
+}

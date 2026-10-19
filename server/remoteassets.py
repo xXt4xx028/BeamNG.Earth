@@ -11,6 +11,7 @@ import threading
 from collections import OrderedDict
 from dataclasses import dataclass
 from pathlib import Path
+import struct
 
 import protocol
 
@@ -19,6 +20,15 @@ CHUNK = 48 * 1024
 MAX_FILE = 32 * 1024 * 1024
 MAX_DEPENDENCIES = 256
 MAX_BATCH = 64 * 1024 * 1024
+BINARY_PREFIX = b'\x00EAR1'
+BINARY_HEADER = struct.Struct('<I')  # offset in the currently open asset
+
+
+def binary_frame(offset, body):
+    if not 0 <= offset <= MAX_FILE or not 0 < len(body) <= CHUNK:
+        raise ValueError('invalid binary asset chunk')
+    payload = BINARY_PREFIX + BINARY_HEADER.pack(offset) + body
+    return protocol.HEADER.pack(len(payload)) + payload
 
 
 @dataclass(frozen=True)
@@ -153,7 +163,8 @@ def assets(user_dir, message, store=None):
 
 
 class Sender:
-    def __init__(self, writer, user_dir, queue_size=256, store=None, global_pacer=None, client_rate=0):
+    def __init__(self, writer, user_dir, queue_size=256, store=None, global_pacer=None, client_rate=0,
+                 binary=False):
         self.writer, self.user_dir = writer, user_dir
         self.queue = asyncio.Queue(maxsize=queue_size)
         self.sent = {}
@@ -162,6 +173,7 @@ class Sender:
         self.global_pacer = global_pacer
         self.pacer = Pacer(client_rate)
         self.wire_bytes = 0
+        self.binary = binary
 
     def start(self):
         self.task = asyncio.create_task(self.run())
@@ -173,7 +185,9 @@ class Sender:
             self.writer.close()  # backpressure: bounded RAM instead of an unlimited stream
 
     async def emit(self, message):
-        frame = protocol.encode(message)
+        await self.emit_frame(protocol.encode(message))
+
+    async def emit_frame(self, frame):
         await self.pacer.wait(len(frame))
         if self.global_pacer:
             await self.global_pacer.wait(len(frame))
@@ -194,10 +208,17 @@ class Sender:
             digest = blob.digest or hashlib.sha256(body).hexdigest()
             if self.sent.get(path) == digest:
                 continue
-            await self.emit({'type': 'asset_begin', 'path': path, 'bytes': len(body), 'digest': digest})
+            begin = {'type':'asset_begin','path':path,'bytes':len(body),'digest':digest}
+            if self.binary:
+                begin['encoding'] = 'binary'
+            await self.emit(begin)
             for offset in range(0, len(body), CHUNK):
-                await self.emit({'type': 'asset_chunk', 'path': path, 'offset': offset,
-                                 'data': base64.b64encode(body[offset:offset + CHUNK]).decode('ascii')})
+                chunk = body[offset:offset+CHUNK]
+                if self.binary:
+                    await self.emit_frame(binary_frame(offset,chunk))
+                else:
+                    await self.emit({'type': 'asset_chunk', 'path': path, 'offset': offset,
+                                     'data': base64.b64encode(chunk).decode('ascii')})
             await self.emit({'type': 'asset_end', 'path': path})
             self.sent[path] = digest
         await self.emit(message)

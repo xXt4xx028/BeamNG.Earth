@@ -27,12 +27,15 @@ def build(out, bridge_exe=None):
         path=ROOT/'beammp'/'Resources'/'Server'/'EarthSync'/name
         shutil.copy2(path, plugin / path.name)
     shutil.copy2(ROOT / 'docs' / 'BEAMMP-CENTRAL.md', out / 'README-BEAMMP.md')
-    docs = ['BEAMMP-CENTRAL.md','BEAMMP-CLIENT-BRIDGE.md','BEAMMP-REGIONAL.md','BEAMMP-TRANSPORT-REVIEW.md']
+    docs = ['BEAMMP-CENTRAL.md','BEAMMP-CLIENT-BRIDGE.md','BEAMMP-REGIONAL.md','BEAMMP-TRANSPORT-REVIEW.md',
+            'BEAMMP-PERFORMANCE.md']
     for name in docs[1:] + ['BEAMMP.md','BEAMMP-CENTRAL.md']:
         shutil.copy2(ROOT/'docs'/name,out/name)
     coverage='2026-10-18-mexico-patagonia-coverage.json'
     (out/'research').mkdir(parents=True,exist_ok=True)
     shutil.copy2(ROOT/'docs/research'/coverage,out/'research'/coverage)
+    performance='2026-10-18-mp-performance-alpha4.json'
+    shutil.copy2(ROOT/'docs/research'/performance,out/'research'/performance)
     bridge_dir = out/'ClientBridge'
     bridge_dir.mkdir(parents=True,exist_ok=True)
     shutil.copy2(ROOT/'tools/earth_client_bridge.py',bridge_dir/'earth_client_bridge.py')
@@ -57,6 +60,7 @@ def build(out, bridge_exe=None):
         for name in docs[1:]:
             archive.write(ROOT/'docs'/name,'BeamNG.Earth-BeamMP/docs/'+name)
         archive.write(ROOT/'docs/research'/coverage,'BeamNG.Earth-BeamMP/docs/research/'+coverage)
+        archive.write(ROOT/'docs/research'/performance,'BeamNG.Earth-BeamMP/docs/research/'+performance)
         for name in ('earth_client_bridge.py','import_elevation.py','check_regional_data.py'):
             archive.write(ROOT/'tools'/name,'BeamNG.Earth-BeamMP/tools/'+name)
         for name in ('main.lua','EarthSync.json'):
@@ -65,7 +69,8 @@ def build(out, bridge_exe=None):
     (out/'ServerConfig.Earth.example.toml').write_text(
         '# Merge into the existing BeamMP server configuration.\n[General]\nMaxPlayers = 8\n'
         'Map = "/levels/beamng_earth/info.json"\n',encoding='utf-8')
-    result = {'experimental': True, 'clientZip': str(client), 'serverPlugin': str(plugin),
+    result = {'experimental': True, 'version':(ROOT/'VERSION').read_text().strip(),
+              'clientZip': str(client), 'serverPlugin': str(plugin),
               'hostZip': str(companion), 'sharedCacheGB':40,'maxPlayers':8,
               'clientBridge':bridge_info,
               'clientBytes': client.stat().st_size,'hostBytes': companion.stat().st_size}
