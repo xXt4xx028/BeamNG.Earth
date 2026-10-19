@@ -20,6 +20,34 @@ class Writer:
 
 
 class RemoteAssetsTest(unittest.IsolatedAsyncioTestCase):
+    async def test_eight_senders_share_one_read_and_detect_reused_slot(self):
+        with tempfile.TemporaryDirectory() as user:
+            path=Path(user)/'temp/beamngEarth/shared/shape.cdae'
+            path.parent.mkdir(parents=True); path.write_bytes(b'one shared immutable shape')
+            store=remoteassets.SharedFiles(max_bytes=100)
+            senders=[remoteassets.Sender(Writer(),user,store=store) for _ in range(8)]
+            message={'type':'shape','path':'/temp/beamngEarth/shared/shape.cdae'}
+            await asyncio.gather(*(s.deliver(message) for s in senders))
+            self.assertEqual((store.reads,store.hits),(1,7))
+            old=senders[0].sent[message['path']]
+            path.write_bytes(b'reused slot with new bytes')
+            await senders[0].deliver(message)
+            self.assertNotEqual(senders[0].sent[message['path']],old)
+            self.assertLessEqual(store.bytes,100)
+
+    async def test_shared_upload_pacer_serializes_reservations(self):
+        from unittest.mock import patch
+        pacer=remoteassets.Pacer(1000)
+        loop=asyncio.get_running_loop()
+        pacer.next=loop.time()+.05
+        delays=[]
+        async def fake_sleep(delay): delays.append(delay)
+        with patch.object(remoteassets.asyncio,'sleep',fake_sleep):
+            await pacer.wait(100)
+            await pacer.wait(100)
+        self.assertEqual(len(delays),2)
+        self.assertGreater(delays[1]-delays[0],.09)
+
     async def test_shared_cache_accounts_for_files_written_by_other_workers(self):
         with tempfile.TemporaryDirectory() as root:
             disk=cache.Cache(root,40,start=False)

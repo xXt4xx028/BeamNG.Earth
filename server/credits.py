@@ -144,6 +144,16 @@ def tile_sources(frame, bbox, dem, zoom, used):
         for k in dem_keys(frame, bbox, zoom):
             p = served.get(k)
             if p:
+                if p in ('local','local+fallback'):
+                    credit = getattr(getattr(dem,'local_dem',None),'credits','Local elevation')
+                    ids.add(f'dem:{credit}')
+                    if p == 'local':
+                        continue
+                    # Mixed tile: credit the provider actually used, rather than every candidate.
+                    fallback = getattr(dem,'local_fallback',{}).get(k)
+                    if fallback:
+                        ids.add(f'dem:{fallback}')
+                    continue
                 ids.add(f"dem:{p}")
     return frozenset(ids)
 

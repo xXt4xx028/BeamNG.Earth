@@ -36,6 +36,7 @@ import cache as cachemod
 import dsmground
 import fast
 import netfetch
+import localdem
 
 log = logging.getLogger("earthd.dem")
 
@@ -93,8 +94,9 @@ class Dem:
 
     # mem_tiles: decoded float32 512² tiles kept in memory (1 MB each; 512 per docs/V1_2_DESIGN.md §4.3).
     # fetcher: the server's netfetch.Fetcher (shared rate limits); None = a Fetcher of its own.
-    def __init__(self, cache_dir, fetch_workers=16, mem_tiles=512, fetcher=None):
+    def __init__(self, cache_dir, fetch_workers=16, mem_tiles=512, fetcher=None, local_dir=None):
         self.cache_dir = cache_dir
+        self.local_dem = localdem.Store(local_dir or os.environ.get('BEAMNG_EARTH_LOCAL_DEM'))
         self.fetcher = fetcher if fetcher is not None else netfetch.Fetcher()
         self.fetcher.register_chain("dem", (MAPTERHORN["url"], AWS["url"]))
         self.pool = ThreadPoolExecutor(fetch_workers, thread_name_prefix="dem-fetch")
@@ -110,6 +112,7 @@ class Dem:
         # (z, x, y) -> the provider that served the tile ("mapterhorn" / "aws-terrarium"; None: no
         # data, zeros), for the data credits (credits.py). A few bytes per tile ever loaded.
         self.served = {}
+        self.local_fallback = {}
 
     def _count(self, what):
         with self._lock:
@@ -225,6 +228,21 @@ class Dem:
         return _resize(mosaic, TILE) if found else None
 
     def _load_tile(self, key):
+        overlay = self.local_dem.tile(key)
+        if overlay is None:
+            return self._load_remote_tile(key)
+        valid = np.isfinite(overlay)
+        if valid.all():
+            self.served[key] = 'local'
+            return overlay
+        base = self._load_remote_tile(key)
+        if valid.any():
+            self.local_fallback[key] = self.served.get(key)
+            self.served[key] = 'local+fallback'
+            return np.where(valid,overlay,base).astype(np.float32)
+        return base
+
+    def _load_remote_tile(self, key):
         z, x, y = key
         try:
             data = self._download(MAPTERHORN, z, x, y)

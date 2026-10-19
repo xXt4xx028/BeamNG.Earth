@@ -1,5 +1,9 @@
 # Revisión del puente por eventos de BeamMP
 
+Actualización alpha.3: el relay por eventos sigue sin implementarse. Se añadió
+en cambio un [auxiliar TLS con conexión separada](BEAMMP-CLIENT-BRIDGE.md), para
+evitar transportar los archivos del terreno por los eventos del juego.
+
 Revisión de código: 2026-10-18. Estado: viable para un prototipo; no implementado
 en alpha.2 ni validado con jugadores reales. No se ha medido rendimiento.
 

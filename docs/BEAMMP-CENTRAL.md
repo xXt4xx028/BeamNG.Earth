@@ -1,6 +1,6 @@
 # Central Earth host: shared 40 GB cache, up to 8 players
 
-Alpha.2 moves world generation to the host. Each player installs the normal
+Alpha.3 keeps world generation on the host. Each player installs the normal
 BeamMP-distributed client mod and receives generated terrain, geometry and
 textures over a separate authenticated Earth connection. **Players do not run
 Python in this mode.** They still render the world and run vehicle physics in
@@ -9,14 +9,16 @@ BeamNG, and the engine needs local temporary copies of received files.
 **Network limitation:** upstream's in-game probes found that BeamNG's LuaSocket
 sandbox rejects direct public Internet connections (`connect restricted`), while
 localhost works; its documented allowlist includes LAN addresses. This prototype
-therefore targets LAN or a VPN exposing an address accepted by that sandbox.
+therefore needs LAN, a compatible VPN, or the new separately started
+[TLS client bridge](BEAMMP-CLIENT-BRIDGE.md).
 The VPN path still needs testing in the installed game version. A public BeamMP
 server address alone does not make the separate Earth asset socket reachable.
-For Internet hosting, players need a compatible private network/VPN or a local
-tunnel endpoint. There is no bundled tunnel or sandbox bypass.
+For Internet hosting, alpha.3 can use the external bridge on each player's PC.
+The Lua mod then connects only to localhost. The bridge is an explicitly started
+program; a BeamMP mod ZIP does not install/start it automatically.
 
 An alternative relay through BeamMP events has been [reviewed in source](BEAMMP-TRANSPORT-REVIEW.md).
-It is not implemented in alpha.2; shared TCP traffic and synchronous sends need
+It is not implemented; shared TCP traffic and synchronous sends need
 live throughput/latency tests before claiming it can stream terrain to eight players.
 
 The host runs two processes:
@@ -50,6 +52,14 @@ on the host; the Lua resource announces the Earth endpoint to joining players.
   generation than eight players driving together. The earlier per-PC CPU
   estimate does not apply to this centralized design. Real eight-player CPU,
   RAM, upload bandwidth and FPS measurements are still required.
+- The host helper now selects a 12 km far scenery radius and 256/256/128/128
+  texture sizes, with a 240 Mbit/s aggregate and 40 Mbit/s per-player Earth
+  upload cap. This reserves nominal headroom on a 300 Mbit/s link; it is not
+  router QoS or a guarantee against congestion. Direct CLI limits are configurable.
+- A shared 128 MiB in-memory asset cache avoids repeated disk reads and SHA256
+  computation for unchanged files used by multiple players. It checks file
+  identity/size/timestamps to detect pooled filenames being reused. It does not
+  merge separately generated geometry or eliminate each player's download.
 - Base64 file framing adds roughly one third to binary transfer size, plus small
   JSON overhead. Files are sent once per connection/content hash and resent if a
   pooled file changes. There is no claim that this transport is optimized for
@@ -105,9 +115,11 @@ when a player asks for bootstrap, so the world service can start before or after
 BeamMP. For reliable testing, restart both services and reconnect players after
 changing generator code/options.
 
-The asset socket is authenticated but **not TLS-encrypted**. Use a trusted private
-network/VPN or an encrypted tunnel; this prototype does not provide a public
-internet TLS endpoint. The shared token is a connection credential, not anticheat.
+Without `--tls-cert`/`--tls-key`, the asset socket is authenticated but not
+encrypted and targets a trusted private network/VPN. With those options, the
+host announces client-bridge mode and the separate bridge verifies its TLS
+certificate. See the bridge guide before using Internet mode. The shared token
+is a connection credential, not anticheat.
 
 ## What happens on a player's PC
 
@@ -141,5 +153,9 @@ version, reconnect/rebase timing, world-map streaming, pooled geometry reuse,
 collision agreement and sustained bandwidth under driving. Automated transport
 tests are not eight-player performance measurements.
 
-Code is in branch `beammp/earth-sync`; use alpha.2 packages for this architecture.
+Alpha.3 adds tests for real TLS through the bridge into the headless generator,
+binary transfer, rejecting an untrusted certificate, shared eight-sender file
+reuse, upload pacing, regional raster reprojection and local DEM fallback.
+
+Code is in branch `beammp/earth-sync`; use alpha.3 packages for these additions.
 The older [distributed setup](BEAMMP.md) remains available for comparison.

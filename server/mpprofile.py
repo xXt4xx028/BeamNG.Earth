@@ -32,6 +32,7 @@ def for_server(server, version):
     return profile(version, overture.RELEASE, {
         "version": updates.local_version(),
         "code": source_digest(),
+        "localElevation": getattr(getattr(server.dem, 'local_dem', None), 'identity', None),
         "pipeline": mapdata.VERSION,
         "worldcover": maprasters.WORLDCOVER_RELEASE,
         "canopy": maprasters.CHM_RELEASE,

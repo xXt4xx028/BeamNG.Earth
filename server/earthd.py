@@ -2273,7 +2273,9 @@ class Connection:
                 self.s.connections.discard(self)
                 self.writer.close()
                 return
-            self.asset_sender = remoteassets.Sender(self.writer, self.s.user_dir)
+            self.asset_sender = remoteassets.Sender(self.writer, self.s.user_dir,
+                store=getattr(self.s,'asset_store',None),global_pacer=getattr(self.s,'upload_pacer',None),
+                client_rate=getattr(self.s,'client_upload_rate',0))
             self.asset_sender.start()
         log.info("client connected %s", self.peer)
         self.s.connections.add(self)
@@ -3207,6 +3209,9 @@ class Connection:
 
 
 async def main_async(args):
+    # Spawned block/road workers inherit this immutable local elevation pack.
+    if getattr(args,'local_dem_dir',None):
+        os.environ['BEAMNG_EARTH_LOCAL_DEM'] = os.path.abspath(args.local_dem_dir)
     if getattr(args, 'remote_assets', False) and args.cache_cap is None:
         args.cache_cap = 40
     fmt = args.far_format
@@ -3295,6 +3300,9 @@ async def main_async(args):
     server.remote_assets = getattr(args, 'remote_assets', False)
     server.max_clients = getattr(args, 'max_clients', 8)
     if server.remote_assets:
+        server.asset_store = remoteassets.SharedFiles()
+        server.upload_pacer = remoteassets.Pacer(getattr(args,'upload_mbps',240)*1e6/8)
+        server.client_upload_rate = getattr(args,'player_upload_mbps',40)*1e6/8
         from pathlib import Path
         import secrets
         token_path = Path(args.auth_token_file or os.path.join(args.cache_dir,'.remote-token'))
@@ -3368,8 +3376,15 @@ async def main_async(args):
             log.info("map tiles on http://127.0.0.1:%d/tiles/{z}/{x}/{y}.jpg", server.map_port)
         except OSError as e:
             log.warning("map tiles off: %s", e)
+    tls = None
+    if getattr(args,'tls_cert',None):
+        import ssl
+        tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        tls.minimum_version = ssl.TLSVersion.TLSv1_2
+        tls.load_cert_chain(args.tls_cert,args.tls_key)
     srv = await asyncio.start_server(
-        lambda r, w: Connection(server, r, w).run(), getattr(args,'listen','127.0.0.1'), args.port)
+        lambda r, w: Connection(server, r, w).run(), getattr(args,'listen','127.0.0.1'), args.port,
+        ssl=tls, **({'ssl_handshake_timeout':10} if tls else {}))
     port = srv.sockets[0].getsockname()[1]
     cache_reconciler = asyncio.create_task(remoteassets.reconcile_cache(disk)) if server.remote_assets else None
     if server.remote_assets and getattr(args,'publish_config',None):
@@ -3380,7 +3395,7 @@ async def main_async(args):
         config = {'profile':mpprofile.for_server(server,SERVER_VERSION)['id'],
                   'maxPlayers':server.max_clients,'cacheGB':args.cache_cap,
                   'worldServer':{'host':args.public_host or '127.0.0.1','port':port,
-                                 'token':server.remote_token,'assetsProtocol':1}}
+                                 'token':server.remote_token,'assetsProtocol':1,'clientBridge':tls is not None}}
         temporary = destination.with_suffix('.tmp')
         temporary.write_text(json.dumps(config,indent=2),encoding='utf-8')
         os.replace(temporary,destination)
@@ -3451,6 +3466,11 @@ def main():
     ap.add_argument('--auth-token-file',help='persistent remote token (created if absent)')
     ap.add_argument('--publish-config',help='write EarthSync server resource configuration after startup')
     ap.add_argument('--public-host',help='reachable hostname/IP announced through BeamMP')
+    ap.add_argument('--tls-cert',help='TLS certificate PEM; enables the separate client bridge mode')
+    ap.add_argument('--tls-key',help='TLS private key PEM (host only)')
+    ap.add_argument('--local-dem-dir',help='immutable regional elevation pack prepared by tools/import_elevation.py')
+    ap.add_argument('--upload-mbps',type=float,default=240,help='aggregate Earth upload cap in decimal Mbit/s (0 unlimited)')
+    ap.add_argument('--player-upload-mbps',type=float,default=40,help='per-player Earth upload cap (0 unlimited)')
     ap.add_argument("--port", type=int, default=47613, help="TCP port on 127.0.0.1 (0 = any free port)")
     ap.add_argument("--user-dir", default=(os.path.join(os.environ.get("LOCALAPPDATA", home), "BeamNG", "BeamNG.drive",
                                                      "current") if sys.platform == "win32"
@@ -3605,6 +3625,12 @@ def main():
                          "never what this session used within the hour, the gravity model or netstats/")
     ap.add_argument("-v", "--verbose", action="store_true")
     args = ap.parse_args()
+    if not all(math.isfinite(v) and v >= 0 for v in (args.upload_mbps,args.player_upload_mbps)):
+        ap.error('upload caps must be finite and nonnegative')
+    if bool(args.tls_cert) != bool(args.tls_key):
+        ap.error('--tls-cert and --tls-key must be supplied together')
+    if args.tls_cert and not args.remote_assets:
+        ap.error('TLS client bridge mode requires --remote-assets')
     args.cells = resolve_cells(args.cells, args.near_visual)
     if args.listen not in ('127.0.0.1','localhost','::1') and not args.remote_assets:
         ap.error('external listening requires --remote-assets authentication and file delivery')

@@ -181,9 +181,14 @@ function M.configure(endpoint)
     or #endpoint.host > 253 or not endpoint.host:match('^[%w%.%-]+$')
     or type(endpoint.port) ~= 'number' or endpoint.port < 1 or endpoint.port > 65535 or endpoint.port % 1 ~= 0
     or type(endpoint.token) ~= 'string' or #endpoint.token < 32 or #endpoint.token > 256 then return false end
-  if M.HOST == endpoint.host and M.PORT == endpoint.port and remoteToken == endpoint.token then return true end
+  local host, port = endpoint.host, endpoint.port
+  if endpoint.clientBridge == true then
+    -- An explicitly started external bridge owns TLS/Internet. Lua only talks to localhost.
+    host, port = '127.0.0.1', 47614
+  end
+  if M.HOST == host and M.PORT == port and remoteToken == endpoint.token then return true end
   M.close()
-  M.HOST, M.PORT, remoteToken = endpoint.host, endpoint.port, endpoint.token
+  M.HOST, M.PORT, remoteToken = host, port, endpoint.token
   timer = RECONNECT_S
   return true
 end

@@ -7,6 +7,9 @@ import asyncio
 import base64
 import hashlib
 import json
+import threading
+from collections import OrderedDict
+from dataclasses import dataclass
 from pathlib import Path
 
 import protocol
@@ -16,6 +19,64 @@ CHUNK = 48 * 1024
 MAX_FILE = 32 * 1024 * 1024
 MAX_DEPENDENCIES = 256
 MAX_BATCH = 64 * 1024 * 1024
+
+
+@dataclass(frozen=True)
+class Blob:
+    body: bytes
+    digest: str
+
+
+class SharedFiles:
+    """Bounded shared read/hash cache; pooled filenames are checked for changes."""
+    def __init__(self, max_bytes=128*1024*1024):
+        self.max_bytes, self.bytes = max_bytes, 0
+        self.entries = OrderedDict()
+        self.lock = threading.Lock()
+        self.reads = self.hits = 0
+
+    def read(self, path):
+        # Single lock also coalesces concurrent first reads by the eight senders.
+        with self.lock:
+            stat = path.stat()
+            stamp = (stat.st_dev,stat.st_ino,stat.st_size,stat.st_mtime_ns,stat.st_ctime_ns)
+            old = self.entries.get(path)
+            if old and old[0] == stamp:
+                self.entries.move_to_end(path)
+                self.hits += 1
+                return old[1]
+            if stat.st_size > MAX_FILE:
+                raise ValueError('asset exceeds transfer limit')
+            body = path.read_bytes()
+            after = path.stat()
+            if stamp != (after.st_dev,after.st_ino,after.st_size,after.st_mtime_ns,after.st_ctime_ns):
+                raise ValueError('asset changed during read; reconnect after generation completes')
+            self.reads += 1
+            blob = Blob(body,hashlib.sha256(body).hexdigest())
+            if old:
+                self.bytes -= len(self.entries.pop(path)[1].body)
+            if len(body) <= self.max_bytes:
+                self.entries[path] = (stamp,blob)
+                self.bytes += len(body)
+                while self.bytes > self.max_bytes:
+                    self.bytes -= len(self.entries.popitem(last=False)[1][1].body)
+            return blob
+
+
+class Pacer:
+    """Reserve one small frame at a time; shared instance caps aggregate Earth upload."""
+    def __init__(self, bytes_per_second):
+        self.rate = bytes_per_second
+        self.next = 0.0
+
+    async def wait(self, size):
+        if self.rate <= 0:
+            return
+        now = asyncio.get_running_loop().time()
+        start = max(now,self.next)
+        self.next = start + size/self.rate
+        if start > now:
+            await asyncio.sleep(start-now)
 
 
 def reconcile_cache_once(disk):
@@ -55,7 +116,7 @@ def references(value):
             yield from references(child)
 
 
-def assets(user_dir, message):
+def assets(user_dir, message, store=None):
     """Dependencies first; return immutable bytes before another worker can reuse a slot."""
     found = {}
 
@@ -67,15 +128,16 @@ def assets(user_dir, message):
         path = local_path(user_dir, vfs)
         if path.stat().st_size > MAX_FILE:
             raise ValueError('asset exceeds transfer limit')
-        body = path.read_bytes()
-        if sum(len(v) for v in found.values() if v is not None) + len(body) > MAX_BATCH:
+        blob = store.read(path) if store else Blob(path.read_bytes(),'')
+        body = blob.body
+        if sum(len(v.body) for v in found.values() if v is not None) + len(body) > MAX_BATCH:
             raise ValueError('asset batch exceeds memory limit')
         found[vfs] = None  # cycle guard
         if path.suffix == '.json':
             for dep in references(json.loads(body)):
                 visit(dep)
         found.pop(vfs)
-        found[vfs] = body
+        found[vfs] = blob
 
     for vfs in references(message):
         visit(vfs)
@@ -91,11 +153,15 @@ def assets(user_dir, message):
 
 
 class Sender:
-    def __init__(self, writer, user_dir, queue_size=256):
+    def __init__(self, writer, user_dir, queue_size=256, store=None, global_pacer=None, client_rate=0):
         self.writer, self.user_dir = writer, user_dir
         self.queue = asyncio.Queue(maxsize=queue_size)
         self.sent = {}
         self.task = None
+        self.store = store
+        self.global_pacer = global_pacer
+        self.pacer = Pacer(client_rate)
+        self.wire_bytes = 0
 
     def start(self):
         self.task = asyncio.create_task(self.run())
@@ -107,7 +173,12 @@ class Sender:
             self.writer.close()  # backpressure: bounded RAM instead of an unlimited stream
 
     async def emit(self, message):
-        self.writer.write(protocol.encode(message))
+        frame = protocol.encode(message)
+        await self.pacer.wait(len(frame))
+        if self.global_pacer:
+            await self.global_pacer.wait(len(frame))
+        self.writer.write(frame)
+        self.wire_bytes += len(frame)
         await self.writer.drain()
 
     async def deliver(self, message):
@@ -117,9 +188,10 @@ class Sender:
                 self.sent.pop(message['path'],None)
                 await self.emit(message)
             return
-        files = await asyncio.to_thread(assets, self.user_dir, message)
-        for path, body in files.items():
-            digest = hashlib.sha256(body).hexdigest()
+        files = await asyncio.to_thread(assets, self.user_dir, message, self.store)
+        for path, blob in files.items():
+            body = blob.body
+            digest = blob.digest or hashlib.sha256(body).hexdigest()
             if self.sent.get(path) == digest:
                 continue
             await self.emit({'type': 'asset_begin', 'path': path, 'bytes': len(body), 'digest': digest})

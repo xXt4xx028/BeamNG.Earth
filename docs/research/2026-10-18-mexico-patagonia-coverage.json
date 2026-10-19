@@ -1,0 +1,301 @@
+{
+  "note": "Endpoint availability at sample points; not measured spatial accuracy. A z15 miss can fall back to coarser data.",
+  "probes": [
+    {
+      "place": "sierra_madre_occidental",
+      "lat": 27.52,
+      "lon": -107.81,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 146398,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 2.563
+    },
+    {
+      "place": "sierra_madre_occidental",
+      "lat": 27.52,
+      "lon": -107.81,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 1.285
+    },
+    {
+      "place": "sierra_madre_occidental",
+      "lat": 27.52,
+      "lon": -107.81,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 17724,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.738
+    },
+    {
+      "place": "sierra_madre_oriental",
+      "lat": 25.35,
+      "lon": -100.15,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 127528,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 1.087
+    },
+    {
+      "place": "sierra_madre_oriental",
+      "lat": 25.35,
+      "lon": -100.15,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 1.559
+    },
+    {
+      "place": "sierra_madre_oriental",
+      "lat": 25.35,
+      "lon": -100.15,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 9446,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.185
+    },
+    {
+      "place": "sierra_madre_sur",
+      "lat": 16.14,
+      "lon": -96.47,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 132992,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 1.259
+    },
+    {
+      "place": "sierra_madre_sur",
+      "lat": 16.14,
+      "lon": -96.47,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.285
+    },
+    {
+      "place": "sierra_madre_sur",
+      "lat": 16.14,
+      "lon": -96.47,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 11256,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.542
+    },
+    {
+      "place": "eje_volcanico",
+      "lat": 19.12,
+      "lon": -98.64,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 121772,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 0.882
+    },
+    {
+      "place": "eje_volcanico",
+      "lat": 19.12,
+      "lon": -98.64,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.307
+    },
+    {
+      "place": "eje_volcanico",
+      "lat": 19.12,
+      "lon": -98.64,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 12717,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.18
+    },
+    {
+      "place": "bariloche",
+      "lat": -41.15,
+      "lon": -71.3,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 64652,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 0.856
+    },
+    {
+      "place": "bariloche",
+      "lat": -41.15,
+      "lon": -71.3,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.275
+    },
+    {
+      "place": "bariloche",
+      "lat": -41.15,
+      "lon": -71.3,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 18331,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.366
+    },
+    {
+      "place": "el_chalten",
+      "lat": -49.33,
+      "lon": -72.88,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 88720,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 1.136
+    },
+    {
+      "place": "el_chalten",
+      "lat": -49.33,
+      "lon": -72.88,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.277
+    },
+    {
+      "place": "el_chalten",
+      "lat": -49.33,
+      "lon": -72.88,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 12880,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.19
+    },
+    {
+      "place": "coyhaique",
+      "lat": -45.57,
+      "lon": -72.07,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 91156,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 2.042
+    },
+    {
+      "place": "coyhaique",
+      "lat": -45.57,
+      "lon": -72.07,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.263
+    },
+    {
+      "place": "coyhaique",
+      "lat": -45.57,
+      "lon": -72.07,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 18880,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.363
+    },
+    {
+      "place": "torres_del_paine",
+      "lat": -50.94,
+      "lon": -73.4,
+      "provider": "mapterhorn",
+      "zoom": 12,
+      "status": "image",
+      "bytes": 72848,
+      "size": [
+        512,
+        512
+      ],
+      "seconds": 0.749
+    },
+    {
+      "place": "torres_del_paine",
+      "lat": -50.94,
+      "lon": -73.4,
+      "provider": "mapterhorn",
+      "zoom": 15,
+      "status": "not_found",
+      "seconds": 0.274
+    },
+    {
+      "place": "torres_del_paine",
+      "lat": -50.94,
+      "lon": -73.4,
+      "provider": "eox2023",
+      "zoom": 14,
+      "status": "image",
+      "bytes": 2568,
+      "size": [
+        256,
+        256
+      ],
+      "seconds": 0.182
+    }
+  ]
+}
